@@ -1,0 +1,27 @@
+{
+  "name": "riff-backend",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:push": "npx prisma db push",
+    "db:seed": "node src/utils/seed.js",
+    "postinstall": "npx prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "@anthropic-ai/sdk": "^0.35.0",
+    "fastify": "^5.0.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/jwt": "^9.0.0",
+    "@fastify/multipart": "^9.0.0",
+    "@fastify/rate-limit": "^10.0.0",
+    "socket.io": "^4.8.0",
+    "bcryptjs": "^2.4.3",
+    "zod": "^3.23.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": { "prisma": "^6.0.0" },
+  "engines": { "node": ">=20.0.0" }
+}

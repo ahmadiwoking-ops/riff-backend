@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  alias           String   @unique
+  age             Int
+  gender          String
+  seekingGender   String
+  connectionType  String
+  country         String?
+  language        String?  @default("en")
+  phone           String?  @unique
+  phoneVerified   Boolean  @default(false)
+  emailVerified   Boolean  @default(false)
+  idVerified      Boolean  @default(false)
+  selfieVerified  Boolean  @default(false)
+  verifiedName    String?
+  verifiedDOB     DateTime?
+  verifiedCountry String?
+  trustScore      String   @default("green")
+  trustFlags      Int      @default(0)
+  plan            String   @default("free")
+  stripeCustomerId String?
+  planExpiresAt   DateTime?
+  pushToken       String?
+  isActive        Boolean  @default(true)
+  isBanned        Boolean  @default(false)
+  banReason       String?
+  lastActiveAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  answers         QuestionAnswer[]
+  sentMessages    Message[]       @relation("sender")
+  receivedMessages Message[]      @relation("receiver")
+  connectionsA    Connection[]    @relation("userA")
+  connectionsB    Connection[]    @relation("userB")
+  circleMembers   CircleMember[]
+  voiceMessages   VoiceMessage[]
+  photos          Photo[]
+  lifeChapters    LifeChapter[]
+  voiceScoresGiven VoiceScore[]   @relation("scorer")
+  voiceScoresReceived VoiceScore[] @relation("scored")
+  flags           SafetyFlag[]
+  notifications   Notification[]
+  @@index([gender, seekingGender])
+  @@index([isActive, isBanned])
+}
+
+model Question {
+  id          String   @id @default(cuid())
+  layer       String
+  dimension   String
+  text        String
+  weight      Int      @default(5)
+  matchLogic  String
+  compatMap   Json?
+  options     Json
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  mode        String   @default("both")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  answers     QuestionAnswer[]
+}
+
+model QuestionAnswer {
+  id         String   @id @default(cuid())
+  userId     String
+  questionId String
+  optionId   String
+  value      String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [id])
+  @@unique([userId, questionId])
+  @@index([userId])
+}
+
+model Connection {
+  id               String   @id @default(cuid())
+  userAId          String
+  userBId          String
+  compatScore      Float
+  stage            String   @default("questioning")
+  isActive         Boolean  @default(true)
+  isPractice       Boolean  @default(false)
+  userAVoiceAvg    Float?
+  userBVoiceAvg    Float?
+  voiceThresholdMet Boolean @default(false)
+  userAPhotoId     String?
+  userBPhotoId     String?
+  revealReady      Boolean  @default(false)
+  revealedAt       DateTime?
+  userADecision    String?
+  userBDecision    String?
+  decisionDeadline DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  userA            User     @relation("userA", fields: [userAId], references: [id])
+  userB            User     @relation("userB", fields: [userBId], references: [id])
+  messages         Message[]
+  voiceMessages    VoiceMessage[]
+  voiceScores      VoiceScore[]
+  @@unique([userAId, userBId])
+}
+
+model Circle {
+  id           String   @id @default(cuid())
+  name         String?
+  stage        String   @default("forming")
+  currentRound Int      @default(0)
+  isActive     Boolean  @default(true)
+  revealedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  members      CircleMember[]
+  rounds       CircleRound[]
+  games        CircleGame[]
+}
+
+model CircleMember {
+  id        String   @id @default(cuid())
+  circleId  String
+  userId    String
+  alias     String
+  joinedAt  DateTime @default(now())
+  isActive  Boolean  @default(true)
+  photoId   String?
+  voiceIntroUrl String?
+  circle    Circle   @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+  @@unique([circleId, userId])
+}
+
+model CircleRound {
+  id         String   @id @default(cuid())
+  circleId   String
+  roundNum   Int
+  questionId String?
+  customQ    String?
+  category   String?
+  startsAt   DateTime @default(now())
+  expiresAt  DateTime
+  isRevealed Boolean  @default(false)
+  circle     Circle   @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  answers    CircleRoundAnswer[]
+}
+
+model CircleRoundAnswer {
+  id        String   @id @default(cuid())
+  roundId   String
+  userId    String
+  answer    String
+  createdAt DateTime @default(now())
+  round     CircleRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  @@unique([roundId, userId])
+}
+
+model CircleGame {
+  id         String   @id @default(cuid())
+  circleId   String
+  gameType   String
+  status     String   @default("active")
+  data       Json
+  results    Json?
+  startedBy  String
+  createdAt  DateTime @default(now())
+  completedAt DateTime?
+  circle     Circle   @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  responses  GameResponse[]
+}
+
+model GameResponse {
+  id        String   @id @default(cuid())
+  gameId    String
+  userId    String
+  roundNum  Int      @default(0)
+  response  Json
+  createdAt DateTime @default(now())
+  game      CircleGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  @@unique([gameId, userId, roundNum])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  connectionId String?
+  circleId     String?
+  senderId     String
+  receiverId   String?
+  type         String   @default("text")
+  content      String
+  isRead       Boolean  @default(false)
+  readAt       DateTime?
+  createdAt    DateTime @default(now())
+  connection   Connection? @relation(fields: [connectionId], references: [id])
+  sender       User        @relation("sender", fields: [senderId], references: [id])
+  receiver     User?       @relation("receiver", fields: [receiverId], references: [id])
+  @@index([connectionId, createdAt])
+  @@index([senderId])
+}
+
+model VoiceMessage {
+  id           String   @id @default(cuid())
+  connectionId String
+  senderId     String
+  s3Key        String
+  duration     Int
+  createdAt    DateTime @default(now())
+  connection   Connection @relation(fields: [connectionId], references: [id])
+  sender       User       @relation(fields: [senderId], references: [id])
+  scores       VoiceScore[]
+}
+
+model VoiceScore {
+  id             String   @id @default(cuid())
+  connectionId   String
+  voiceMessageId String
+  scorerId       String
+  scoredId       String
+  madeSmile      Int
+  feltGenuine    Int
+  wantMore       Int
+  average        Float
+  createdAt      DateTime @default(now())
+  connection     Connection   @relation(fields: [connectionId], references: [id])
+  voiceMessage   VoiceMessage @relation(fields: [voiceMessageId], references: [id])
+  scorer         User         @relation("scorer", fields: [scorerId], references: [id])
+  scored         User         @relation("scored", fields: [scoredId], references: [id])
+  @@unique([voiceMessageId, scorerId])
+}
+
+model Photo {
+  id        String   @id @default(cuid())
+  userId    String
+  s3Key     String
+  purpose   String
+  isLive    Boolean  @default(false)
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model LifeChapter {
+  id           String   @id @default(cuid())
+  userId       String
+  connectionId String?
+  title        String
+  photoS3Key   String?
+  voiceS3Key   String?
+  isShared     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model SafetyFlag {
+  id           String   @id @default(cuid())
+  userId       String
+  flagType     String
+  severity     String
+  triggerContent String?
+  connectionId String?
+  status       String   @default("pending")
+  reviewedBy   String?
+  reviewNotes  String?
+  createdAt    DateTime @default(now())
+  resolvedAt   DateTime?
+  user         User     @relation(fields: [userId], references: [id])
+  @@index([status, severity])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  @@index([userId, isRead])
+}
+
+model BotPersona {
+  id            String   @id @default(cuid())
+  alias         String   @unique
+  gender        String
+  age           Int
+  country       String
+  archetype     String
+  traits        Json
+  bio           String
+  personality   String   @db.Text
+  responseSpeed Json
+  storyFragments Json?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model BotBrainUpdate {
+  id           String   @id @default(cuid())
+  version      Int
+  sources      Json
+  fragmentCount Int
+  watchlistUpdates Int
+  apiCost      Float
+  status       String   @default("deployed")
+  createdAt    DateTime @default(now())
+}
