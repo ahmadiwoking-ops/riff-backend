@@ -76,3 +76,4 @@ async function start() {
 process.on('SIGTERM', async () => { await prisma.$disconnect(); process.exit(0); });
 process.on('SIGINT', async () => { await prisma.$disconnect(); process.exit(0); });
 start().catch((err) => { console.error('Failed to start:', err); process.exit(1); });
+// redeploy Fri Jun 19 13:59:55 GMTDT 2026
