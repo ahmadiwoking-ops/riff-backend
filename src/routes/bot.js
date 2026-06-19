@@ -2,11 +2,20 @@ const prisma = require('../db');
 const { generateResponse } = require('../services/bot');
 async function botRoutes(app) {
   // Public demo endpoint for the marketing website (no auth required)
-  app.post('/demo', async (request) => {
+  // Per-IP daily cap so anonymous visitors can't drain Anthropic credits.
+  app.post('/demo', {
+    config: {
+      rateLimit: {
+        max: 20,
+        timeWindow: '1 day',
+        keyGenerator: (req) => req.headers['x-forwarded-for'] || req.ip,
+      },
+    },
+  }, async (request) => {
     const { message, conversationHistory } = request.body;
     const persona = await prisma.botPersona.findFirst({ where: { alias: 'Luna' } })
       || await prisma.botPersona.findFirst({ where: { isActive: true } });
-    const response = await generateResponse(persona, message, conversationHistory || []);
+    const response = await generateResponse(persona, message, conversationHistory || [], { maxTokens: 150 });
     return { response: response.text };
   });
   app.post('/respond', { preHandler: [app.authenticate] }, async (request) => {

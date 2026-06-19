@@ -18,7 +18,7 @@ async function start() {
     transports: ['websocket', 'polling'],
   });
 
-  const app = Fastify({ logger: true, serverFactory: (handler) => { httpServer.on('request', handler); return httpServer; } });
+  const app = Fastify({ logger: true, trustProxy: true, serverFactory: (handler) => { httpServer.on('request', handler); return httpServer; } });
 
   await app.register(cors, { origin: true, credentials: true });
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'riff-jwt-secret-2026', sign: { expiresIn: '7d' } });

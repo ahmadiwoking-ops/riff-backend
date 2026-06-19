@@ -49,7 +49,7 @@ const FALLBACK_RESPONSES = {
 };
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-async function generateResponse(persona, message, history) {
+async function generateResponse(persona, message, history, opts = {}) {
   if (!message) return { text: "hey, you there?" };
 
   const safety = scanMessage(message);
@@ -71,7 +71,7 @@ async function generateResponse(persona, message, history) {
       });
       msgs.push({ role: 'user', content: message });
 
-      const res = await client.messages.create({ model: MODEL, max_tokens: 300, system, messages: msgs });
+      const res = await client.messages.create({ model: MODEL, max_tokens: opts.maxTokens || 300, system, messages: msgs });
       let text = res.content.map(b => b.text || '').join('').trim();
       if (!text) text = pick(FALLBACK_RESPONSES.reactions);
 
