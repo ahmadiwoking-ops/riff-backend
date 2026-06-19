@@ -20,7 +20,7 @@ async function start() {
 
   const app = Fastify({ logger: true, serverFactory: (handler) => { httpServer.on('request', handler); return httpServer; } });
 
-  await app.register(cors, { origin: [process.env.CORS_ORIGIN || 'http://localhost:3001', 'https://riff-app.co.uk', 'https://admin.riff-app.co.uk'], credentials: true });
+  await app.register(cors, { origin: true, credentials: true });
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'riff-jwt-secret-2026', sign: { expiresIn: '7d' } });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
