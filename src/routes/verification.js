@@ -71,39 +71,86 @@ async function verificationRoutes(app) {
     return { status: 'payment_confirmed', nextStep: 'id_verification' };
   });
 
-  // ═══ PAID TIER STEP 2: Create Onfido SDK token for ID verification ═══
+  // ═══ PAID TIER STEP 2: Create Veriff session for ID verification ═══
   app.post('/create-id-check', { preHandler: [app.authenticate] }, async (request, reply) => {
     const user = await prisma.user.findUnique({ where: { id: request.user.id } });
 
-    if (!process.env.ONFIDO_API_TOKEN) {
+    if (!process.env.VERIFF_API_KEY) {
       // Demo mode - simulate verification
-      return { status: 'demo_mode', message: 'Onfido not configured - simulating ID check' };
+      return { status: 'demo_mode', message: 'Veriff not configured - simulating ID check' };
     }
 
-    // Create Onfido applicant
-    const onfidoRes = await fetch('https://api.eu.onfido.com/v3.6/applicants', {
+    // Create Veriff verification session
+    const sessionRes = await fetch('https://stationapi.veriff.com/v1/sessions', {
       method: 'POST',
-      headers: { 'Authorization': 'Token token=' + process.env.ONFIDO_API_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ first_name: user.alias, last_name: 'User', email: user.email }),
+      headers: {
+        'X-AUTH-CLIENT': process.env.VERIFF_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        verification: {
+          callback: process.env.VERIFF_CALLBACK_URL || 'https://riff-app.co.uk/verification-complete',
+          person: {
+            firstName: user.alias,
+            lastName: 'User',
+          },
+          vendorData: user.id,
+        },
+      }),
     });
-    const applicant = await onfidoRes.json();
 
-    // Create SDK token
-    const tokenRes = await fetch('https://api.eu.onfido.com/v3.6/sdk_token', {
-      method: 'POST',
-      headers: { 'Authorization': 'Token token=' + process.env.ONFIDO_API_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ applicant_id: applicant.id, referrer: '*://*/*' }),
-    });
-    const sdkToken = await tokenRes.json();
+    const session = await sessionRes.json();
 
-    return { sdkToken: sdkToken.token, applicantId: applicant.id };
+    if (session.status !== 'success') {
+      console.error('[veriff] Session creation failed:', JSON.stringify(session));
+      return reply.code(500).send({ error: 'Failed to create verification session' });
+    }
+
+    return {
+      sessionUrl: session.verification.url,
+      sessionToken: session.verification.sessionToken,
+      sessionId: session.verification.id,
+    };
   });
 
-  // ═══ PAID TIER STEP 2b: Complete ID check (webhook or poll) ═══
+  // ═══ PAID TIER STEP 2b: Complete ID check (webhook from Veriff or client poll) ═══
   app.post('/complete-id-check', { preHandler: [app.authenticate] }, async (request) => {
-    const { applicantId, passed } = request.body;
+    const { sessionId, passed } = request.body;
 
-    if (passed || !process.env.ONFIDO_API_TOKEN) {
+    // If Veriff is configured, verify the decision server-side
+    if (process.env.VERIFF_API_KEY && process.env.VERIFF_API_SECRET && sessionId) {
+      try {
+        const crypto = require('crypto');
+        const hmac = crypto.createHmac('sha256', process.env.VERIFF_API_SECRET);
+        hmac.update(sessionId);
+        const signature = hmac.digest('hex').toLowerCase();
+
+        const decisionRes = await fetch('https://stationapi.veriff.com/v1/sessions/' + sessionId + '/decision', {
+          method: 'GET',
+          headers: {
+            'X-AUTH-CLIENT': process.env.VERIFF_API_KEY,
+            'X-HMAC-SIGNATURE': signature,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const decision = await decisionRes.json();
+        const status = decision?.verification?.status;
+
+        if (status === 'approved') {
+          await prisma.user.update({ where: { id: request.user.id }, data: { idVerified: true, selfieVerified: true } });
+          return { status: 'id_verified', nextStep: 'phone_verification' };
+        }
+
+        return { status: 'id_failed', reason: 'ID verification did not pass (status: ' + status + '). Please try again with a valid government ID.' };
+      } catch (err) {
+        console.error('[veriff] Decision check error:', err.message);
+        return { status: 'id_failed', reason: 'Could not verify decision. Please try again.' };
+      }
+    }
+
+    // Demo mode fallback - accept client-side result
+    if (passed || !process.env.VERIFF_API_KEY) {
       await prisma.user.update({ where: { id: request.user.id }, data: { idVerified: true, selfieVerified: true } });
       return { status: 'id_verified', nextStep: 'phone_verification' };
     }
