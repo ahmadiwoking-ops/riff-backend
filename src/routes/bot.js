@@ -1,6 +1,14 @@
 const prisma = require('../db');
 const { generateResponse } = require('../services/bot');
 async function botRoutes(app) {
+  // Public demo endpoint for the marketing website (no auth required)
+  app.post('/demo', async (request) => {
+    const { message, conversationHistory } = request.body;
+    const persona = await prisma.botPersona.findFirst({ where: { alias: 'Luna' } })
+      || await prisma.botPersona.findFirst({ where: { isActive: true } });
+    const response = await generateResponse(persona, message, conversationHistory || []);
+    return { response: response.text };
+  });
   app.post('/respond', { preHandler: [app.authenticate] }, async (request) => {
     const { message, conversationHistory } = request.body;
     const persona = await prisma.botPersona.findFirst({ where: { isActive: true } });
