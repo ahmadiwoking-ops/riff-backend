@@ -3,6 +3,7 @@ const { scanMessage } = require('./safety');
 
 let Anthropic;
 try { Anthropic = require('@anthropic-ai/sdk'); } catch {}
+console.log('BOT DIAGNOSTIC - API key present:', !!process.env.ANTHROPIC_API_KEY, '| SDK loaded:', !!Anthropic);
 const client = process.env.ANTHROPIC_API_KEY && Anthropic ? new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 
 // ═══ CORE SYSTEM PROMPT (shared by all personas) ═══
@@ -248,7 +249,7 @@ async function generateResponse(persona, message, history) {
 
       return { text: responseText };
     } catch (err) {
-      console.error('Claude API error:', err.message);
+      console.error('Claude API error FULL:', err.status, err.message, JSON.stringify(err.error || {}));
       // Fall through to local responses
     }
   }
