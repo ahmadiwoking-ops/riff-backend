@@ -32,6 +32,58 @@ async function adminRoutes(app) {
     return { users: await prisma.user.findMany({ where, select: { id: true, alias: true, email: true, gender: true, plan: true, trustScore: true, isBanned: true, createdAt: true, lastActiveAt: true }, orderBy: { createdAt: 'desc' }, take: 50, skip: ((parseInt(page) || 1) - 1) * 50 }) };
   });
 
+  // ═══ User Management ═══
+  app.post('/users/:id/ban', { preHandler: [app.authenticate] }, async (request) => {
+    const { reason } = request.body || {};
+    await prisma.user.update({ where: { id: request.params.id }, data: { isBanned: true, banReason: reason || 'Banned by admin' } });
+    return { status: 'banned', userId: request.params.id };
+  });
+
+  app.post('/users/:id/unban', { preHandler: [app.authenticate] }, async (request) => {
+    await prisma.user.update({ where: { id: request.params.id }, data: { isBanned: false, banReason: null } });
+    return { status: 'unbanned', userId: request.params.id };
+  });
+
+  app.post('/users/:id/delete', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const userId = request.params.id;
+    try {
+      // Get all connections involving this user
+      const connections = await prisma.connection.findMany({ where: { OR: [{ userAId: userId }, { userBId: userId }] }, select: { id: true } });
+      const connIds = connections.map(c => c.id);
+
+      // Delete in dependency order to avoid foreign key violations
+      await prisma.$transaction([
+        // Tables referencing VoiceMessage/Connection
+        prisma.voiceScore.deleteMany({ where: { OR: [{ scorerId: userId }, { scoredId: userId }] } }),
+        prisma.voiceMessage.deleteMany({ where: { senderId: userId } }),
+        // Messages (sender or receiver)
+        prisma.message.deleteMany({ where: { OR: [{ senderId: userId }, { receiverId: userId }] } }),
+        // Connection-owned records for connections being deleted
+        ...(connIds.length ? [
+          prisma.voiceScore.deleteMany({ where: { connectionId: { in: connIds } } }),
+          prisma.voiceMessage.deleteMany({ where: { connectionId: { in: connIds } } }),
+          prisma.message.deleteMany({ where: { connectionId: { in: connIds } } }),
+        ] : []),
+        // Connections
+        prisma.connection.deleteMany({ where: { OR: [{ userAId: userId }, { userBId: userId }] } }),
+        // Circle membership
+        prisma.circleMember.deleteMany({ where: { userId } }),
+        // User-owned records
+        prisma.photo.deleteMany({ where: { userId } }),
+        prisma.lifeChapter.deleteMany({ where: { userId } }),
+        prisma.safetyFlag.deleteMany({ where: { userId } }),
+        prisma.notification.deleteMany({ where: { userId } }),
+        prisma.questionAnswer.deleteMany({ where: { userId } }),
+        // Finally delete the user
+        prisma.user.delete({ where: { id: userId } }),
+      ]);
+      return { status: 'deleted', userId };
+    } catch (err) {
+      console.error('[admin] Delete user error:', err.message);
+      return reply.code(500).send({ error: 'Delete failed: ' + err.message });
+    }
+  });
+
   // ═══ Content Studio: proxy to Anthropic API ═══
   app.post('/generate-content', { preHandler: [app.authenticate] }, async (request, reply) => {
     if (!client) {
