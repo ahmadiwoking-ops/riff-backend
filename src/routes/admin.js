@@ -29,7 +29,14 @@ async function adminRoutes(app) {
   app.get('/users', { preHandler: [app.authenticate] }, async (request) => {
     const { search, page } = request.query;
     const where = search ? { OR: [{ alias: { contains: search } }, { email: { contains: search } }] } : {};
-    return { users: await prisma.user.findMany({ where, select: { id: true, alias: true, email: true, gender: true, plan: true, trustScore: true, isBanned: true, createdAt: true, lastActiveAt: true }, orderBy: { createdAt: 'desc' }, take: 50, skip: ((parseInt(page) || 1) - 1) * 50 }) };
+    return { users: await prisma.user.findMany({ where, select: {
+      id: true, alias: true, email: true, gender: true, age: true, seekingGender: true, connectionType: true,
+      country: true, language: true, phone: true, phoneVerified: true, emailVerified: true,
+      idVerified: true, selfieVerified: true, trustScore: true, trustFlags: true,
+      plan: true, planExpiresAt: true, isBanned: true, banReason: true,
+      registrationIp: true, registrationLocation: true,
+      isActive: true, lastActiveAt: true, createdAt: true, updatedAt: true,
+    }, orderBy: { createdAt: 'desc' }, take: 50, skip: ((parseInt(page) || 1) - 1) * 50 }) };
   });
 
   // ═══ User Management ═══
