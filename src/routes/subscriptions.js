@@ -13,11 +13,12 @@ async function subscriptionRoutes(app) {
     return { subscription: await prisma.user.findUnique({ where: { id: request.user.id }, select: { plan: true, planExpiresAt: true } }) };
   });
 
-  app.post('/checkout', { preHandler: [app.authenticate] }, async (request) => {
+  app.post('/checkout', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { plan, billing } = request.body;
 
+    // Demo / no-Stripe mode: instant upgrade (used when STRIPE_SECRET_KEY is unset).
     if (!process.env.STRIPE_SECRET_KEY) {
-      const user = await prisma.user.update({
+      await prisma.user.update({
         where: { id: request.user.id },
         data: { plan, planExpiresAt: new Date(Date.now() + (billing === 'yearly' ? 365 : 30) * 86400000), idVerified: true, selfieVerified: true, phoneVerified: true, trustScore: 'green' },
       });
@@ -25,29 +26,59 @@ async function subscriptionRoutes(app) {
     }
 
     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    let user = await prisma.user.findUnique({ where: { id: request.user.id } });
-    let customerId = user.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({ email: user.email, metadata: { userId: user.id } });
-      customerId = customer.id;
-      await prisma.user.update({ where: { id: user.id }, data: { stripeCustomerId: customerId } });
+
+    // Resolve the price FIRST so a bad plan/billing combo returns a clear 400
+    // instead of a cryptic Stripe "missing price" error. Includes `single`,
+    // which your app offers but the old map was missing.
+    const priceMap = {
+      single_monthly: process.env.STRIPE_PRICE_SINGLE_MONTHLY,
+      single_yearly: process.env.STRIPE_PRICE_SINGLE_BIANNUAL,
+      single_biannual: process.env.STRIPE_PRICE_SINGLE_BIANNUAL,
+      explorer_monthly: process.env.STRIPE_PRICE_EXPLORER_MONTHLY,
+      explorer_yearly: process.env.STRIPE_PRICE_EXPLORER_YEARLY,
+      inner_circle_monthly: process.env.STRIPE_PRICE_INNER_CIRCLE_MONTHLY,
+      inner_circle_yearly: process.env.STRIPE_PRICE_INNER_CIRCLE_YEARLY,
+    };
+    const priceKey = `${plan}_${billing}`;
+    const priceId = priceMap[priceKey];
+    if (!priceId) {
+      request.log.error({ plan, billing, priceKey }, 'No Stripe price configured for this plan/billing');
+      return reply.code(400).send({ error: `No price configured for ${priceKey}. Set the matching STRIPE_*_PRICE_ID env var to a test-mode price id.` });
     }
 
-    const priceMap = {
-      explorer_monthly: process.env.STRIPE_EXPLORER_MONTHLY_PRICE_ID,
-      explorer_yearly: process.env.STRIPE_EXPLORER_YEARLY_PRICE_ID,
-      inner_circle_monthly: process.env.STRIPE_INNER_MONTHLY_PRICE_ID,
-      inner_circle_yearly: process.env.STRIPE_INNER_YEARLY_PRICE_ID,
-    };
-    const priceId = priceMap[plan + '_' + billing];
+    const user = await prisma.user.findUnique({ where: { id: request.user.id } });
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription', customer: customerId,
+    // Create a fresh Stripe customer and persist it.
+    const createCustomer = async () => {
+      const customer = await stripe.customers.create({ email: user.email, metadata: { userId: user.id } });
+      await prisma.user.update({ where: { id: user.id }, data: { stripeCustomerId: customer.id } });
+      return customer.id;
+    };
+
+    let customerId = user.stripeCustomerId || (await createCustomer());
+
+    const buildSession = (cust) => stripe.checkout.sessions.create({
+      mode: 'subscription', customer: cust,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: 'https://riff-app.co.uk/success?session_id={CHECKOUT_SESSION_ID}',
       cancel_url: 'https://riff-app.co.uk/cancel',
       metadata: { userId: user.id, plan, billing },
     });
+
+    let session;
+    try {
+      session = await buildSession(customerId);
+    } catch (err) {
+      // Self-heal: stored customer doesn't exist in this Stripe mode/account
+      // (test/live mismatch or deleted). Recreate once and retry.
+      if (err && err.code === 'resource_missing' && err.param === 'customer') {
+        request.log.warn({ customerId }, 'Stored Stripe customer missing — recreating and retrying');
+        customerId = await createCustomer();
+        session = await buildSession(customerId);
+      } else {
+        throw err;
+      }
+    }
 
     return { checkoutUrl: session.url, sessionId: session.id };
   });
