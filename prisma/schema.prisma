@@ -35,6 +35,8 @@ model User {
   isActive        Boolean  @default(true)
   isBanned        Boolean  @default(false)
   banReason       String?
+  registrationIp       String?
+  registrationLocation String?
   lastActiveAt    DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
