@@ -17,8 +17,11 @@ async function authRoutes(app) {
       const existing = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { alias: data.alias }] } });
       if (existing) return reply.status(409).send({ error: existing.email === data.email ? 'Email already registered' : 'Alias taken' });
       const passwordHash = await bcrypt.hash(data.password, 12);
+      const regIp = request.headers["x-forwarded-for"]?.split(",")[0]?.trim() || request.ip || null;
+      let registrationLocation = null;
+      try { const geo = await fetch("http://ip-api.com/json/" + regIp + "?fields=country,city"); const loc = await geo.json(); if (loc.country) registrationLocation = (loc.city ? loc.city + ", " : "") + loc.country; } catch {}
       const user = await prisma.user.create({
-        data: { email: data.email, alias: data.alias, age: data.age, gender: data.gender, seekingGender: data.seekingGender, connectionType: data.connectionType, passwordHash },
+        data: { email: data.email, alias: data.alias, age: data.age, gender: data.gender, seekingGender: data.seekingGender, connectionType: data.connectionType, passwordHash, registrationIp: regIp, registrationLocation },
         select: { id: true, alias: true, email: true, plan: true, trustScore: true },
       });
       const token = app.jwt.sign({ id: user.id, alias: user.alias, role: 'user' });
