@@ -37,6 +37,8 @@ model User {
   banReason       String?
   registrationIp       String?
   registrationLocation String?
+  botConnectionPlan       String?
+  botConnectionExpiresAt  DateTime?
   lastActiveAt    DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -318,4 +320,15 @@ model BotBrainUpdate {
   apiCost      Float
   status       String   @default("deployed")
   createdAt    DateTime @default(now())
+}
+
+model BotConnectionUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  monthStart   DateTime
+  messageCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@unique([userId, monthStart])
+  @@index([userId])
 }

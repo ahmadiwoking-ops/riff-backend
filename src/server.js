@@ -51,6 +51,7 @@ async function start() {
   app.register(require('./routes/notifications'), { prefix: '/api/notifications' });
   app.register(require('./routes/subscriptions'), { prefix: '/api/subscriptions' });
   app.register(require('./routes/verification'), { prefix: '/api/verification' });
+  app.register(require('./routes/bot-connection'), { prefix: '/api/bot-connection' });
 
   io.on('connection', (socket) => {
     socket.on('join:connection', (id) => socket.join('connection:' + id));
