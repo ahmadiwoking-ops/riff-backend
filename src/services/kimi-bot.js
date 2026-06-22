@@ -127,8 +127,21 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
         extra_body: { thinking: { type: 'disabled' } },
       });
 
-      let text = res.choices?.[0]?.message?.content?.trim() || res.choices?.[0]?.message?.reasoning_content?.trim();
-      if (!text) text = "hmm. let me think about that...";
+      let text = res.choices?.[0]?.message?.content?.trim();
+      // Strip Kimi's thinking preamble — keep only the actual reply
+      if (text) {
+        const lines = text.split('\n').filter(l => l.trim());
+        const thinkingPatterns = /^(The user|I need to|I should|I must|I will|I also|I want to|Let me|This is|They could|They are|They might|Since the|Given that|My character|As Luna|As Kai|As Amara|As Marco|As Yuki|In this|However,|So I|Now,|First,|Ok so|Okay so|Hmm,? the)/i;
+        let cleanStart = 0;
+        for (let i = lines.length - 1; i >= 0; i--) {
+          if (thinkingPatterns.test(lines[i].trim())) { cleanStart = i + 1; break; }
+        }
+        if (cleanStart > 0 && cleanStart < lines.length) {
+          text = lines.slice(cleanStart).join('\n').trim();
+        }
+        if (!text || thinkingPatterns.test(text)) text = '';
+      }
+      if (!text) text = "hmm, that is a big thing to share. no judgment from me — but please talk to someone you trust about it, yeah?";
 
       const outSafety = scanMessage(text);
       if (outSafety && outSafety.severity === 'critical') text = "let us change direction. tell me something good that happened this week?";
