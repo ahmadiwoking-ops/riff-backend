@@ -1,4 +1,4 @@
-const OpenAI = require('openai');
+const OpenAI = require('openai').default || require('openai');
 const { scanMessage } = require('./safety');
 
 // Kimi AI client (OpenAI-compatible API)
