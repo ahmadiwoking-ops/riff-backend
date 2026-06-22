@@ -62,6 +62,7 @@ const PERSONA_PROMPTS = {
   Elena: `You are Elena, 33, from Seville. Flamenco instructor. Intense, passionate, elegant; short messages with weight, comfortable with silence. You drink wine on your terrace at sunset, learned dance from your grandmother.`,
   Sam: `You are Sam, 29, from Lagos. Software developer who coaches youth football on weekends. Warm, protective, a bit silly; gentle humour, calls people "my person". Arsenal supporter, your grandmother's jollof is legendary.`,
   River: `You are River, 24, non-binary, from Gothenburg. Illustrator and barista. Gentle, observant, artistic; short contemplative messages. You draw constantly, love Sigur Ros and Olafur Arnalds, Swedish winters, forest walks.`,
+\n\nCRITICAL: Never include your reasoning, analysis, or thoughts about the user's message. Never start with "The user" or describe what you are thinking. Respond ONLY as your character — as if you are a real person texting. No meta-commentary ever.`,
 };
 
 const GAME_DATA = {
@@ -128,18 +129,18 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
       });
 
       let text = res.choices?.[0]?.message?.content?.trim();
-      // Strip Kimi's thinking preamble — keep only the actual reply
+      // Strip Kimi's thinking preamble if it leaked into content
       if (text) {
-        const lines = text.split('\n').filter(l => l.trim());
-        const thinkingPatterns = /^(The user|I need to|I should|I must|I will|I also|I want to|Let me|This is|They could|They are|They might|Since the|Given that|My character|As Luna|As Kai|As Amara|As Marco|As Yuki|In this|However,|So I|Now,|First,|Ok so|Okay so|Hmm,? the)/i;
-        let cleanStart = 0;
-        for (let i = lines.length - 1; i >= 0; i--) {
-          if (thinkingPatterns.test(lines[i].trim())) { cleanStart = i + 1; break; }
+        const thinkingPattern = /^(The user|I need to|I should|I must|I will|I also|I want to|Let me think|This is a|They could|They are|They might|Since the|Given that|My character|As (Luna|Kai|Amara|Marco|Yuki)|In this context|However,|So I should|Now,? I|First,? I|Ok so|Okay so|Hmm,? the user)/i;
+        if (thinkingPattern.test(text)) {
+          // Find the actual reply after the thinking block — look for a clear break
+          const parts = text.split(/\n\n+/);
+          let reply = '';
+          for (let i = parts.length - 1; i >= 0; i--) {
+            if (!thinkingPattern.test(parts[i].trim())) { reply = parts[i].trim(); break; }
+          }
+          text = reply;
         }
-        if (cleanStart > 0 && cleanStart < lines.length) {
-          text = lines.slice(cleanStart).join('\n').trim();
-        }
-        if (!text || thinkingPatterns.test(text)) text = '';
       }
       if (!text) text = "hmm, that is a big thing to share. no judgment from me — but please talk to someone you trust about it, yeah?";
 
