@@ -121,13 +121,13 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
 
       const res = await kimiClient.chat.completions.create({
         model: KIMI_MODEL,
-        max_tokens: 300,
+        max_tokens: 500,
         temperature: 1,
         messages: [{ role: 'system', content: system }, ...msgs],
         extra_body: { chat_template_kwargs: { thinking: false } },
       });
 
-      let text = res.choices?.[0]?.message?.content?.trim();
+      let text = res.choices?.[0]?.message?.content?.trim() || res.choices?.[0]?.message?.reasoning_content?.trim();
       if (!text) text = "hmm. let me think about that...";
 
       const outSafety = scanMessage(text);
