@@ -124,7 +124,7 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
         max_tokens: 500,
         temperature: 1,
         messages: [{ role: 'system', content: system }, ...msgs],
-        extra_body: { chat_template_kwargs: { thinking: false } },
+        extra_body: { thinking: { type: 'disabled' } },
       });
 
       let text = res.choices?.[0]?.message?.content?.trim() || res.choices?.[0]?.message?.reasoning_content?.trim();
