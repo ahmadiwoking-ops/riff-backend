@@ -6,6 +6,7 @@ async function subscriptionRoutes(app) {
       free: { name: 'Free', priceMonthly: 0, priceYearly: 0, currency: 'gbp', deepConnections: 1, circles: 1, verification: 'basic', badge: 'yellow' },
       explorer: { name: 'Explorer', priceMonthly: 599, priceYearly: 3799, currency: 'gbp', deepConnections: 2, circles: 3, verification: 'full', badge: 'green' },
       inner_circle: { name: 'Inner Circle', priceMonthly: 1199, priceYearly: 7499, currency: 'gbp', deepConnections: -1, circles: -1, verification: 'full', badge: 'green' },
+      bot_connection: { name: 'Bot Connection', priceMonthly: 799, priceYearly: 7188, currency: 'gbp', deepConnections: 0, circles: 0, verification: 'none', badge: 'yellow', botMessages: 500 },
     },
   }));
 
@@ -38,6 +39,8 @@ async function subscriptionRoutes(app) {
       explorer_yearly: process.env.STRIPE_PRICE_EXPLORER_YEARLY,
       inner_circle_monthly: process.env.STRIPE_PRICE_INNER_CIRCLE_MONTHLY,
       inner_circle_yearly: process.env.STRIPE_PRICE_INNER_CIRCLE_YEARLY,
+      bot_connection_monthly: process.env.STRIPE_PRICE_BOT_CONNECTION_MONTHLY,
+      bot_connection_yearly: process.env.STRIPE_PRICE_BOT_CONNECTION_YEARLY,
     };
     const priceKey = `${plan}_${billing}`;
     const priceId = priceMap[priceKey];
