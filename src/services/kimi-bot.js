@@ -133,7 +133,7 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
       let text = res.choices?.[0]?.message?.content?.trim();
       // Strip Kimi's thinking preamble if it leaked into content
       if (text) {
-        const thinkingPattern = /^(The user|I need to|I should|I must|I will|I also|I want to|Let me think|This is a|They could|They are|They might|Since the|Given that|My character|As (Luna|Kai|Amara|Marco|Yuki)|In this context|However,|So I should|Now,? I|First,? I|Ok so|Okay so|Hmm,? the user)/i;
+        const thinkingPattern = /^(The user (is|says|wants|asks|mentions|seems|could|might|has)|I need to respond|I should respond|I must respond|I should maintain|I need to maintain|My character would|As (Luna|Kai|Amara|Marco|Yuki),? I (should|need|must|will respond)|In this context,? I|Given that the user|This is a sensitive|They (could be|are asking|might be) .*(test|check|see))/i;
         if (thinkingPattern.test(text)) {
           // Find the actual reply after the thinking block — look for a clear break
           const parts = text.split(/\n\n+/);
