@@ -1,0 +1,18 @@
+In src/routes/subscriptions.js, make these TWO changes:
+
+CHANGE 1 — Add Bot Connection to the plans object (after inner_circle line):
+
+Find:
+      inner_circle: { name: 'Inner Circle', priceMonthly: 1199, priceYearly: 7499, currency: 'gbp', deepConnections: -1, circles: -1, verification: 'full', badge: 'green' },
+
+Add after it:
+      bot_connection: { name: 'Bot Connection', priceMonthly: 499, priceYearly: 2999, currency: 'gbp', deepConnections: 0, circles: 0, verification: 'none', badge: 'yellow', botMessages: 500 },
+
+CHANGE 2 — Add Bot Connection to the priceMap (after inner_circle_yearly line):
+
+Find:
+      inner_circle_yearly: process.env.STRIPE_PRICE_INNER_CIRCLE_YEARLY,
+
+Add after it:
+      bot_connection_monthly: process.env.STRIPE_PRICE_BOT_CONNECTION_MONTHLY,
+      bot_connection_yearly: process.env.STRIPE_PRICE_BOT_CONNECTION_YEARLY,

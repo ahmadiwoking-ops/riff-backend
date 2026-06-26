@@ -1,252 +1,315 @@
-const prisma = require('../db');
+'use strict';
 
-async function verificationRoutes(app) {
-  // Get verification status
-  app.get('/status', { preHandler: [app.authenticate] }, async (request) => {
-    const user = await prisma.user.findUnique({
-      where: { id: request.user.id },
-      select: { phoneVerified: true, selfieVerified: true, idVerified: true, trustScore: true, plan: true },
-    });
-    return { verification: user, tier: user.idVerified ? 'full' : user.selfieVerified ? 'basic' : 'none', badgeColor: user.trustScore };
-  });
+const crypto = require('crypto');
 
-  // ═══ FREE TIER: Selfie liveness result ═══
-  app.post('/selfie-result', { preHandler: [app.authenticate] }, async (request) => {
-    const { passed, faceDetected, livenessConfirmed } = request.body;
-    if (passed && faceDetected && livenessConfirmed) {
-      await prisma.user.update({ where: { id: request.user.id }, data: { selfieVerified: true, trustScore: 'yellow' } });
-      return { status: 'verified', badge: 'yellow' };
-    } else {
-      await prisma.user.update({ where: { id: request.user.id }, data: { selfieVerified: false, trustScore: 'red' } });
-      return { status: 'failed', badge: 'red', reason: !faceDetected ? 'No human face detected' : 'Liveness check failed - use a live camera, not a photo of a photo' };
-    }
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+// ADJUST THIS to however the rest of your app gets its Prisma client.
+// If your other routes use `fastify.prisma`, delete this line and use that
+// inside the handlers instead. If you export a singleton, point this at it
+// (e.g. require('../lib/prisma') or require('../db')).
+const prisma = require('../lib/prisma');
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // ═══ PAID TIER STEP 1: Create Stripe payment intent for verification (GBP 2.99) ═══
-  app.post('/create-payment', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-    if (user.idVerified) return { status: 'already_verified' };
+const VERIFF_BASE_URL = process.env.VERIFF_API_URL || 'https://stationapi.veriff.com/v1';
+const VERIFF_API_KEY = process.env.VERIFF_API_KEY;
+const VERIFF_SHARED_SECRET = process.env.VERIFF_SHARED_SECRET;
 
-    // Free for paid subscribers
-    if (user.plan === 'explorer' || user.plan === 'inner_circle') {
-      return { status: 'included_in_plan', skipPayment: true };
-    }
+// Twilio Verify (handles code generation + checking server-side, so no DB table
+// is needed). Swap this block out if you use a different SMS provider.
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
 
-    if (!process.env.STRIPE_SECRET_KEY) {
-      // Demo mode
-      return { status: 'demo_mode', skipPayment: true, message: 'Stripe not configured - proceeding in demo mode' };
-    }
-
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-
-    // Create or retrieve Stripe customer
-    let customerId = user.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({ email: user.email, metadata: { userId: user.id, alias: user.alias } });
-      customerId = customer.id;
-      await prisma.user.update({ where: { id: user.id }, data: { stripeCustomerId: customerId } });
-    }
-
-    // Create payment intent for GBP 2.99
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: 299, // GBP 2.99 in pence
-      currency: 'gbp',
-      customer: customerId,
-      metadata: { userId: user.id, type: 'id_verification' },
-    });
-
-    return { clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id };
-  });
-
-  // ═══ PAID TIER STEP 1b: Confirm payment received ═══
-  app.post('/confirm-payment', { preHandler: [app.authenticate] }, async (request) => {
-    const { paymentIntentId } = request.body;
-
-    if (process.env.STRIPE_SECRET_KEY && paymentIntentId) {
-      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-      const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
-      if (pi.status !== 'succeeded') return { error: 'Payment not completed' };
-    }
-
-    return { status: 'payment_confirmed', nextStep: 'id_verification' };
-  });
-
-  // ═══ PAID TIER STEP 2: Create Veriff session for ID verification ═══
-  app.post('/create-id-check', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-
-    if (!process.env.VERIFF_API_KEY) {
-      // Demo mode - simulate verification
-      return { status: 'demo_mode', message: 'Veriff not configured - simulating ID check' };
-    }
-
-    // Create Veriff verification session
-    const sessionRes = await fetch('https://stationapi.veriff.com/v1/sessions', {
-      method: 'POST',
-      headers: {
-        'X-AUTH-CLIENT': process.env.VERIFF_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        verification: {
-          callback: process.env.VERIFF_CALLBACK_URL || 'https://riff-app.co.uk/verification-complete',
-          person: {
-            firstName: user.alias,
-            lastName: 'User',
-          },
-          vendorData: user.id,
-        },
-      }),
-    });
-
-    const session = await sessionRes.json();
-
-    if (session.status !== 'success') {
-      console.error('[veriff] Session creation failed:', JSON.stringify(session));
-      return reply.code(500).send({ error: 'Failed to create verification session' });
-    }
-
-    return {
-      sessionUrl: session.verification.url,
-      sessionToken: session.verification.sessionToken,
-      sessionId: session.verification.id,
-    };
-  });
-
-  // ═══ PAID TIER STEP 2b: Complete ID check (webhook from Veriff or client poll) ═══
-  app.post('/complete-id-check', { preHandler: [app.authenticate] }, async (request) => {
-    const { sessionId, passed } = request.body;
-
-    // If Veriff is configured, verify the decision server-side
-    if (process.env.VERIFF_API_KEY && process.env.VERIFF_API_SECRET && sessionId) {
-      try {
-        const crypto = require('crypto');
-        const hmac = crypto.createHmac('sha256', process.env.VERIFF_API_SECRET);
-        hmac.update(sessionId);
-        const signature = hmac.digest('hex').toLowerCase();
-
-        const decisionRes = await fetch('https://stationapi.veriff.com/v1/sessions/' + sessionId + '/decision', {
-          method: 'GET',
-          headers: {
-            'X-AUTH-CLIENT': process.env.VERIFF_API_KEY,
-            'X-HMAC-SIGNATURE': signature,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        const decision = await decisionRes.json();
-        const status = decision?.verification?.status;
-
-        if (status === 'approved') {
-          await prisma.user.update({ where: { id: request.user.id }, data: { idVerified: true, selfieVerified: true } });
-          return { status: 'id_verified', nextStep: 'phone_verification' };
-        }
-
-        return { status: 'id_failed', reason: 'ID verification did not pass (status: ' + status + '). Please try again with a valid government ID.' };
-      } catch (err) {
-        console.error('[veriff] Decision check error:', err.message);
-        return { status: 'id_failed', reason: 'Could not verify decision. Please try again.' };
-      }
-    }
-
-    // Demo mode fallback - accept client-side result
-    if (passed || !process.env.VERIFF_API_KEY) {
-      await prisma.user.update({ where: { id: request.user.id }, data: { idVerified: true, selfieVerified: true } });
-      return { status: 'id_verified', nextStep: 'phone_verification' };
-    }
-
-    return { status: 'id_failed', reason: 'ID verification did not pass. Please try again with a valid government ID.' };
-  });
-
-  // ═══ PAID TIER STEP 3: Send SMS verification code via Twilio ═══
-  app.post('/send-sms-code', { preHandler: [app.authenticate] }, async (request) => {
-    const { phoneNumber } = request.body;
-    if (!phoneNumber) return { error: 'Phone number required' };
-
-    // Validate phone format (basic UK check)
-    const cleaned = phoneNumber.replace(/\s/g, '');
-    if (!/^\+?[\d]{10,15}$/.test(cleaned)) return { error: 'Invalid phone number format. Include country code, e.g. +447...' };
-
-    if (!process.env.TWILIO_ACCOUNT_SID) {
-      // Demo mode
-      return { status: 'demo_mode', message: 'Code sent (demo mode - any 6 digits will work)' };
-    }
-
-    const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    await twilio.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID).verifications.create({ to: cleaned, channel: 'sms' });
-
-    return { status: 'code_sent', phone: cleaned.slice(0, 4) + '****' + cleaned.slice(-3) };
-  });
-
-  // ═══ PAID TIER STEP 3b: Verify SMS code ═══
-  app.post('/verify-sms-code', { preHandler: [app.authenticate] }, async (request) => {
-    const { phoneNumber, code } = request.body;
-    if (!phoneNumber || !code) return { error: 'Phone number and code required' };
-
-    const cleaned = phoneNumber.replace(/\s/g, '');
-
-    if (!process.env.TWILIO_ACCOUNT_SID) {
-      // Demo mode - accept any 6-digit code
-      if (code.length === 6 && /^\d{6}$/.test(code)) {
-        await prisma.user.update({ where: { id: request.user.id }, data: { phoneVerified: true, phone: cleaned, trustScore: 'green' } });
-        return { status: 'verified', badge: 'green' };
-      }
-      return { error: 'Invalid code. Enter 6 digits.' };
-    }
-
-    const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    const verification = await twilio.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID).verificationChecks.create({ to: cleaned, code });
-
-    if (verification.status === 'approved') {
-      await prisma.user.update({ where: { id: request.user.id }, data: { phoneVerified: true, phone: cleaned, trustScore: 'green' } });
-      return { status: 'verified', badge: 'green' };
-    }
-
-    return { error: 'Invalid code. Please check and try again.' };
-  });
-
-  // ═══ SUBSCRIPTION CHECKOUT (Stripe) ═══
-  app.post('/subscribe', { preHandler: [app.authenticate] }, async (request) => {
-    const { plan, billing } = request.body;
-    const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-
-    if (!process.env.STRIPE_SECRET_KEY) {
-      // Demo mode - upgrade directly
-      await prisma.user.update({
-        where: { id: request.user.id },
-        data: { plan, planExpiresAt: new Date(Date.now() + (billing === 'yearly' ? 365 : 30) * 86400000), idVerified: true, selfieVerified: true, phoneVerified: true, trustScore: 'green' },
-      });
-      return { status: 'upgraded', plan, demo: true };
-    }
-
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    let customerId = user.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({ email: user.email, metadata: { userId: user.id } });
-      customerId = customer.id;
-      await prisma.user.update({ where: { id: user.id }, data: { stripeCustomerId: customerId } });
-    }
-
-    const priceMap = {
-      explorer_monthly: process.env.STRIPE_EXPLORER_MONTHLY_PRICE_ID,
-      explorer_yearly: process.env.STRIPE_EXPLORER_YEARLY_PRICE_ID,
-      inner_circle_monthly: process.env.STRIPE_INNER_MONTHLY_PRICE_ID,
-      inner_circle_yearly: process.env.STRIPE_INNER_YEARLY_PRICE_ID,
-    };
-    const priceId = priceMap[plan + '_' + billing];
-    if (!priceId) return { error: 'Invalid plan or billing period' };
-
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: 'https://riff-app.co.uk/success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: 'https://riff-app.co.uk/cancel',
-      metadata: { userId: user.id, plan, billing },
-    });
-
-    return { checkoutUrl: session.url, sessionId: session.id };
-  });
+// HMAC-SHA256 hex of `payload` (string or Buffer) using the Veriff shared secret.
+function veriffSignature(payload) {
+  return crypto.createHmac('sha256', VERIFF_SHARED_SECRET).update(payload).digest('hex');
 }
 
-module.exports = verificationRoutes;
+// Constant-time string compare to avoid timing attacks on the webhook signature.
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a || ''), 'utf8');
+  const bb = Buffer.from(String(b || ''), 'utf8');
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+module.exports = async function (fastify, opts) {
+  // Veriff signs webhooks over the RAW request bytes, so we capture them before
+  // JSON.parse. This content-type parser is encapsulated to THIS plugin only —
+  // your /api/subscriptions and other JSON routes are not affected.
+  fastify.addContentTypeParser(
+    'application/json',
+    { parseAs: 'buffer' },
+    (req, body, done) => {
+      req.rawBody = body; // Buffer
+      if (!body || body.length === 0) return done(null, {});
+      try {
+        done(null, JSON.parse(body.toString('utf8')));
+      } catch (err) {
+        err.statusCode = 400;
+        done(err, undefined);
+      }
+    }
+  );
+
+  // Reads the authenticated user id. Assumes your existing auth hook populates
+  // request.user — the same mechanism your /api/subscriptions routes rely on.
+  // (The /webhook route below intentionally does NOT use this — it's called by
+  // Veriff, not a logged-in user, and is secured by the HMAC signature instead.)
+  function requireUserId(request, reply) {
+    const userId = request.user && request.user.id;
+    if (!userId) {
+      reply.code(401).send({ error: 'Unauthorized' });
+      return null;
+    }
+    return userId;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 1) CREATE VERIFF SESSION
+  //    Mobile calls this, then opens the returned `url` with Linking.openURL().
+  // ───────────────────────────────────────────────────────────────────────────
+  fastify.post('/create-session', async (request, reply) => {
+    const userId = requireUserId(request, reply);
+    if (!userId) return;
+
+    try {
+      const res = await fetch(`${VERIFF_BASE_URL}/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-AUTH-CLIENT': VERIFF_API_KEY,
+        },
+        body: JSON.stringify({
+          verification: {
+            // vendorData lets the decision webhook map results back to this user.
+            vendorData: String(userId),
+            // Where Veriff redirects the end-user once they finish in the browser.
+            // For Expo Go set VERIFF_CALLBACK_URL to a deep link or a simple
+            // "you can return to the app now" web page. Optional.
+            callback: process.env.VERIFF_CALLBACK_URL || undefined,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.verification) {
+        request.log.error({ status: res.status, data }, 'Veriff session creation failed');
+        return reply.code(502).send({ error: 'Could not create verification session' });
+      }
+
+      return reply.send({
+        url: data.verification.url, // open this on the device
+        sessionId: data.verification.id, // keep this; send it to /complete-id-check
+        status: data.verification.status, // "created"
+      });
+    } catch (err) {
+      request.log.error(err, 'Veriff create-session error');
+      return reply.code(500).send({ error: 'Verification service unavailable' });
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 2) WEBHOOK HANDLER
+  //    Set this as your *Decision* webhook in the Veriff Customer Portal:
+  //      https://<your-app>.up.railway.app/api/verification/webhook
+  // ───────────────────────────────────────────────────────────────────────────
+  fastify.post('/webhook', async (request, reply) => {
+    const signature = request.headers['x-hmac-signature'];
+    const raw = request.rawBody || Buffer.from(JSON.stringify(request.body || {}));
+
+    if (!signature || !safeEqual(signature, veriffSignature(raw))) {
+      request.log.warn('Veriff webhook: invalid or missing signature');
+      return reply.code(401).send({ error: 'Invalid signature' });
+    }
+
+    const body = request.body || {};
+    // Handle both the classic decision webhook and the full-auto webhook shapes.
+    const verification = body.verification || (body.data && body.data.verification) || {};
+    const decision = verification.status || verification.decision; // approved | declined | ...
+    const vendorData = verification.vendorData || body.vendorData; // = the user id we set
+
+    if (!vendorData) {
+      request.log.warn({ body }, 'Veriff webhook: no vendorData, cannot map to a user');
+      return reply.code(200).send({ ok: true }); // ack so Veriff stops retrying
+    }
+
+    try {
+      const approved = decision === 'approved';
+      // Veriff handles the ID DOCUMENT only here. The selfie/liveness is your
+      // separate in-app step 2 (POST /selfie-result), so we set idVerified only
+      // and never touch selfieVerified from the Veriff decision.
+      await prisma.user.update({
+        where: { id: vendorData }, // NOTE: if User.id is an Int, use Number(vendorData)
+        data: {
+          idVerified: approved,
+        },
+      });
+    } catch (err) {
+      // Never 500 here — Veriff would just retry. Log and acknowledge.
+      request.log.error(err, 'Veriff webhook: failed to update user');
+    }
+
+    return reply.code(200).send({ ok: true });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 3) SELFIE RESULT
+  //    Your app's in-app liveness step (step 2) posts its result here. It sends
+  //    { passed, faceDetected, livenessConfirmed } and fires-and-forgets, so we
+  //    just record selfieVerified and ack. THIS is what sets selfieVerified —
+  //    not Veriff.
+  // ───────────────────────────────────────────────────────────────────────────
+  fastify.post('/selfie-result', async (request, reply) => {
+    const userId = requireUserId(request, reply);
+    if (!userId) return;
+
+    const { passed } = request.body || {};
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { selfieVerified: !!passed },
+      });
+    } catch (err) {
+      request.log.error(err, 'selfie-result: failed to update user');
+      return reply.code(500).send({ error: 'Could not save selfie result' });
+    }
+    return reply.send({ ok: true, selfieVerified: !!passed });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 4) COMPLETE ID CHECK
+  //    Called by the app after the user returns from the Veriff URL. Actively
+  //    pulls the decision from Veriff (so it works even if the webhook is slow
+  //    or not yet configured) and updates the flags.
+  // ───────────────────────────────────────────────────────────────────────────
+  fastify.post('/complete-id-check', async (request, reply) => {
+    const userId = requireUserId(request, reply);
+    if (!userId) return;
+
+    const { sessionId } = request.body || {};
+    if (!sessionId) return reply.code(400).send({ error: 'sessionId is required' });
+
+    try {
+      const res = await fetch(`${VERIFF_BASE_URL}/sessions/${sessionId}/decision`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-AUTH-CLIENT': VERIFF_API_KEY,
+          // GET /decision is signed over the sessionId. If you ever get 401s
+          // here, try signing the full request path instead:
+          //   veriffSignature(`/v1/sessions/${sessionId}/decision`)
+          'X-HMAC-SIGNATURE': veriffSignature(sessionId),
+        },
+      });
+
+      // While there is no conclusive decision yet, Veriff returns 404 (or a body
+      // with a null verification). Treat both as "pending".
+      if (res.status === 404) return reply.send({ status: 'pending' });
+
+      const data = await res.json();
+      const verification = data && data.verification;
+      if (!verification || !verification.status) {
+        return reply.send({ status: 'pending' });
+      }
+
+      const decision = verification.status; // approved | declined | resubmission_requested | ...
+      const approved = decision === 'approved';
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { idVerified: approved },
+      });
+
+      return reply.send({ status: decision, idVerified: approved });
+    } catch (err) {
+      request.log.error(err, 'Veriff complete-id-check error');
+      return reply.code(500).send({ error: 'Could not fetch verification decision' });
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 5) SEND SMS CODE  (Twilio Verify)
+  // ───────────────────────────────────────────────────────────────────────────
+  fastify.post('/send-sms-code', async (request, reply) => {
+    const userId = requireUserId(request, reply);
+    if (!userId) return;
+
+    const { phoneNumber } = request.body || {};
+    if (!phoneNumber) {
+      return reply.code(400).send({ error: 'phoneNumber is required (E.164, e.g. +447700900000)' });
+    }
+
+    try {
+      const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+      const res = await fetch(
+        `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/Verifications`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({ To: phoneNumber, Channel: 'sms' }).toString(),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        request.log.error({ status: res.status, data }, 'Twilio send-code failed');
+        return reply.code(502).send({ error: 'Could not send SMS code' });
+      }
+
+      return reply.send({ status: data.status }); // "pending"
+    } catch (err) {
+      request.log.error(err, 'send-sms-code error');
+      return reply.code(500).send({ error: 'SMS service unavailable' });
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 6) VERIFY SMS CODE  (Twilio Verify)
+  // ───────────────────────────────────────────────────────────────────────────
+  fastify.post('/verify-sms-code', async (request, reply) => {
+    const userId = requireUserId(request, reply);
+    if (!userId) return;
+
+    const { phoneNumber, code } = request.body || {};
+    if (!phoneNumber || !code) {
+      return reply.code(400).send({ error: 'phoneNumber and code are required' });
+    }
+
+    try {
+      const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+      const res = await fetch(
+        `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({ To: phoneNumber, Code: String(code) }).toString(),
+        }
+      );
+
+      const data = await res.json();
+      const approved = res.ok && data.status === 'approved';
+      if (!approved) {
+        // 200 with a status the client can read (it checks result.status === 'verified'
+        // and otherwise shows result.error), rather than throwing on a wrong code.
+        return reply.send({ status: 'failed', error: 'Invalid or expired code' });
+      }
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { phoneVerified: true },
+      });
+
+      return reply.send({ status: 'verified' });
+    } catch (err) {
+      request.log.error(err, 'verify-sms-code error');
+      return reply.code(500).send({ error: 'SMS service unavailable' });
+    }
+  });
+};
