@@ -133,15 +133,17 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
       let text = res.choices?.[0]?.message?.content?.trim();
       // Strip Kimi's thinking preamble if it leaked into content
       if (text) {
+        console.log('[kimi-bot] RAW response:', text.substring(0, 300));
         const thinkingPattern = /^(The user (is|says|wants|asks|mentions|seems|could|might|has)|I need to respond|I should respond|I must respond|I should maintain|I need to maintain|My character would|As (Luna|Kai|Amara|Marco|Yuki),? I (should|need|must|will respond)|In this context,? I|Given that the user|This is a sensitive|They (could be|are asking|might be) .*(test|check|see))/i;
         if (thinkingPattern.test(text)) {
-          // Find the actual reply after the thinking block — look for a clear break
+          console.log('[kimi-bot] FILTER TRIGGERED on:', text.substring(0, 100));
           const parts = text.split(/\n\n+/);
           let reply = '';
           for (let i = parts.length - 1; i >= 0; i--) {
             if (!thinkingPattern.test(parts[i].trim())) { reply = parts[i].trim(); break; }
           }
           text = reply;
+          console.log('[kimi-bot] AFTER FILTER:', text ? text.substring(0, 200) : 'EMPTY');
         }
       }
       if (!text) text = "hmm, that is a big thing to share. no judgment from me — but please talk to someone you trust about it, yeah?";
