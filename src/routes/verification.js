@@ -6,8 +6,8 @@ const crypto = require('crypto');
 // ADJUST THIS to however the rest of your app gets its Prisma client.
 // If your other routes use `fastify.prisma`, delete this line and use that
 // inside the handlers instead. If you export a singleton, point this at it
-// (e.g. require('../lib/prisma') or require('../db')).
-const prisma = require('../lib/prisma');
+// (e.g. require('../db') or require('../db')).
+const prisma = require('../db');
 // ─────────────────────────────────────────────────────────────────────────────
 
 const VERIFF_BASE_URL = process.env.VERIFF_API_URL || 'https://stationapi.veriff.com/v1';
