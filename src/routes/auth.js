@@ -5,8 +5,8 @@ const { z } = require('zod');
 const registerSchema = z.object({
   email: z.string().email(), password: z.string().min(8), alias: z.string().min(2).max(20),
   age: z.number().int().min(18).max(120),
-  gender: z.enum(['Male', 'Female', 'Non-binary', 'No Preference', 'Prefer not to say']),
-  seekingGender: z.enum(['Male', 'Female', 'Non-binary', 'No Preference', 'No preference', 'A Friends Circle']),
+  gender: z.enum(['Male', 'Female', 'Non-binary', 'No Preference', 'Prefer not to say']).optional().default('No Preference'),
+  seekingGender: z.enum(['Male', 'Female', 'Non-binary', 'No Preference', 'No preference', 'A Friends Circle']).optional().default('No Preference'),
   connectionType: z.enum(['deep', 'circle', 'bot', 'all', 'both']),
 });
 
