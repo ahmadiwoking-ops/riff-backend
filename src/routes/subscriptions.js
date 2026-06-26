@@ -63,8 +63,8 @@ async function subscriptionRoutes(app) {
     const buildSession = (cust) => stripe.checkout.sessions.create({
       mode: 'subscription', customer: cust,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: 'https://riff-app.co.uk/get-started?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: 'https://riff-app.co.uk/get-started',
+      success_url: 'riff://verification?onboarding=true',
+      cancel_url: 'riff://subscription?onboarding=true',
       metadata: { userId: user.id, plan, billing },
     });
 
