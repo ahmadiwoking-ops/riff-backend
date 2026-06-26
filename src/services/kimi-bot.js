@@ -141,7 +141,7 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
           for (let i = parts.length - 1; i >= 0; i--) {
             if (!metaPattern.test(parts[i].trim()) && parts[i].trim().length > 20) {
               text = parts[i].trim();
-              text = text.replace(/^(Alternative|Draft|Option \d|Response|Reply|Final response)\s*:?\s*/i, '').trim();
+              text = text.replace(/^(Alternative|Another option|Another|Draft|Option \d?|Response|Reply|Final response|Final|Revised)\s*:?\s*/i, '').trim();
               if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
               break;
               break;
