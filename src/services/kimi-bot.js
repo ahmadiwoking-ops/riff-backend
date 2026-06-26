@@ -137,9 +137,9 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
         if (raw) {
           console.log('[kimi-bot] content empty, reasoning_content found:', raw.substring(0, 200));
           const parts = raw.split(/\n\n+/);
-          const metaPattern = /^(The user|I need to|I should|I must|My character|As (Luna|Kai|Amara|Marco|Yuki)|In this|Given that|This is a|They (could|are|might)|Since the|However,|So I|Now I|First I|Ok so|Okay so|Let me (think|consider|respond)|I want to respond|I will respond|I also need|Alternative:|Draft:|Option \d|Response:|Reply:|Here'?s my|Final response)/i;
+          const metaPattern = /^(The user|I need to|I should|I must|My character|As (Luna|Kai|Amara|Marco|Yuki)|In this|Given that|This is a|They (could|are|might)|Since the|However,|So I|Now I|First I|Ok so|Okay so|Let me|Let's|I want to|I will|I also|Alternative:|Draft:|Option \d|Response:|Reply:|Here'?s my|Final response|I'll respond|I can respond|For this|Thinking|Safety|Check)/i;
           for (let i = parts.length - 1; i >= 0; i--) {
-            if (!metaPattern.test(parts[i].trim()) && parts[i].trim().length > 5) {
+            if (!metaPattern.test(parts[i].trim()) && parts[i].trim().length > 20) {
               text = parts[i].trim();
               text = text.replace(/^(Alternative|Draft|Option \d|Response|Reply|Final response)\s*:?\s*/i, '').trim();
               if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
