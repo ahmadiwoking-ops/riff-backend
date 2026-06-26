@@ -63,7 +63,7 @@ async function subscriptionRoutes(app) {
     const buildSession = (cust) => stripe.checkout.sessions.create({
       mode: 'subscription', customer: cust,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: source === 'mobile' ? 'riff://verification?onboarding=true' : 'https://riff-app.co.uk/get-started?session_id={CHECKOUT_SESSION_ID}',
+      success_url: source === 'mobile' ? 'https://api.riff-app.co.uk/api/subscriptions/payment-success' : 'https://riff-app.co.uk/get-started?session_id={CHECKOUT_SESSION_ID}',
       cancel_url: source === 'mobile' ? 'riff://subscription?onboarding=true' : 'https://riff-app.co.uk/get-started',
       metadata: { userId: user.id, plan, billing },
     });
@@ -89,6 +89,10 @@ async function subscriptionRoutes(app) {
   app.post('/cancel', { preHandler: [app.authenticate] }, async (request) => {
     await prisma.user.update({ where: { id: request.user.id }, data: { plan: 'free', planExpiresAt: null } });
     return { status: 'cancelled', plan: 'free' };
+  });
+// Mobile payment success page
+  app.get('/payment-success', async (request, reply) => {
+    reply.type('text/html').send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment Complete</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0A0E18;color:#F0ECE5;font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:24px;text-align:center}.card{max-width:380px}.icon{font-size:64px;margin-bottom:16px}h1{font-size:24px;font-weight:800;margin-bottom:8px}p{color:#8B8B96;font-size:15px;line-height:1.5;margin-bottom:24px}.btn{display:inline-block;background:#22D3EE;color:#0A0E18;font-size:16px;font-weight:700;padding:14px 32px;border-radius:12px;text-decoration:none}.sub{color:#4A4A54;font-size:13px;margin-top:16px}</style></head><body><div class="card"><div class="icon">✅</div><h1>Payment Complete!</h1><p>Your subscription is now active.<br>Go back to the Riff app to continue.</p><a href="riff://verification?onboarding=true" class="btn">Open Riff App</a><p class="sub">If the button doesn't work, switch back to the app manually.</p></div></body></html>`);
   });
 // Verify a checkout session and activate the plan (called by mobile after Stripe redirect)
   app.post('/verify-session', { preHandler: [app.authenticate] }, async (request, reply) => {
