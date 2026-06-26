@@ -131,23 +131,42 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
       });
 
       let text = res.choices?.[0]?.message?.content?.trim();
-      // If content is empty, try reasoning_content but strip the meta-reasoning
+      // If content is empty, extract the real reply from reasoning_content
       if (!text) {
         let raw = res.choices?.[0]?.message?.reasoning_content?.trim();
         if (raw) {
-          console.log('[kimi-bot] content empty, reasoning_content found:', raw.substring(0, 200));
+          console.log('[kimi-bot] content empty, mining reasoning_content');
           const parts = raw.split(/\n\n+/);
-          const metaPattern = /^(The user|I need to|I should|I must|My character|As (Luna|Kai|Amara|Marco|Yuki)|In this|Given that|This is a|They (could|are|might)|Since the|However,|So I|Now I|First I|Ok so|Okay so|Let me|Let's|I want to|I will|I also|Alternative:|Draft:|Option \d|Response:|Reply:|Here'?s my|Final response|I'll respond|I can respond|For this|Thinking|Safety|Check)/i;
+          // Look for quoted reply first (Kimi often wraps the draft in quotes)
           for (let i = parts.length - 1; i >= 0; i--) {
-            if (!metaPattern.test(parts[i].trim()) && parts[i].trim().length > 20) {
-              text = parts[i].trim();
-              text = text.replace(/^(Alternative|Another option|Another|Draft|Option \d?|Response|Reply|Final response|Final|Revised)\s*:?\s*/i, '').trim();
-              if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
-              break;
-              break;
+            let p = parts[i].trim();
+            let match = p.match(/^[""](.{20,})[""]$/s);
+            if (match) { text = match[1].trim(); break; }
+            match = p.match(/[""](.{20,})[""]$/s);
+            if (match) { text = match[1].trim(); break; }
+          }
+          // If no quoted reply, find the paragraph that reads like casual texting
+          if (!text) {
+            for (let i = parts.length - 1; i >= 0; i--) {
+              let p = parts[i].trim();
+              if (p.length < 20) continue;
+              let firstChar = p.charAt(0);
+              // Skip if starts with uppercase meta-language
+              if (/^(The |I (need|should|must|will|also|want|can)|Let|As |In |Given|This |They |Since|However|So I|Now I|First|Ok |Okay|Check|Safety|Alternative|Another|Draft|Option|Response|Reply|Final|Revised|For )/.test(p)) continue;
+              // Good sign: starts lowercase, or with an emoji, or with "hmm"/"haha"/"oh"
+              if (firstChar === firstChar.toLowerCase() || /^[^\w]/.test(firstChar)) {
+                text = p;
+                break;
+              }
             }
           }
-          if (text) console.log('[kimi-bot] Extracted reply from reasoning:', text.substring(0, 200));
+          // Clean up any remaining prefixes or quotes
+          if (text) {
+            text = text.replace(/^(Alternative|Another option|Another|Draft|Option \d?|Response|Reply|Final response|Final|Revised)\s*:?\s*/i, '').trim();
+            if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
+            if (text.startsWith('\u201c')) text = text.replace(/^\u201c|\u201d$/g, '');
+            console.log('[kimi-bot] Extracted:', text.substring(0, 200));
+          }
         }
       }
       // Strip Kimi's thinking preamble if it leaked into content
