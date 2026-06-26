@@ -131,6 +131,22 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
       });
 
       let text = res.choices?.[0]?.message?.content?.trim();
+      // If content is empty, try reasoning_content but strip the meta-reasoning
+      if (!text) {
+        let raw = res.choices?.[0]?.message?.reasoning_content?.trim();
+        if (raw) {
+          console.log('[kimi-bot] content empty, reasoning_content found:', raw.substring(0, 200));
+          const parts = raw.split(/\n\n+/);
+          const metaPattern = /^(The user|I need to|I should|I must|My character|As (Luna|Kai|Amara|Marco|Yuki)|In this|Given that|This is a|They (could|are|might)|Since the|However,|So I|Now I|First I|Ok so|Okay so|Let me (think|consider|respond)|I want to respond|I will respond|I also need)/i;
+          for (let i = parts.length - 1; i >= 0; i--) {
+            if (!metaPattern.test(parts[i].trim()) && parts[i].trim().length > 5) {
+              text = parts[i].trim();
+              break;
+            }
+          }
+          if (text) console.log('[kimi-bot] Extracted reply from reasoning:', text.substring(0, 200));
+        }
+      }
       // Strip Kimi's thinking preamble if it leaked into content
       if (text) {
         console.log('[kimi-bot] RAW response:', text.substring(0, 300));
