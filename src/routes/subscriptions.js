@@ -15,7 +15,7 @@ async function subscriptionRoutes(app) {
   });
 
   app.post('/checkout', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const { plan, billing } = request.body;
+    const { plan, billing, source } = request.body;
 
     // Demo / no-Stripe mode: instant upgrade (used when STRIPE_SECRET_KEY is unset).
     if (!process.env.STRIPE_SECRET_KEY) {
@@ -63,8 +63,8 @@ async function subscriptionRoutes(app) {
     const buildSession = (cust) => stripe.checkout.sessions.create({
       mode: 'subscription', customer: cust,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: 'riff://verification?onboarding=true',
-      cancel_url: 'riff://subscription?onboarding=true',
+      success_url: source === 'mobile' ? 'riff://verification?onboarding=true' : 'https://riff-app.co.uk/get-started?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: source === 'mobile' ? 'riff://subscription?onboarding=true' : 'https://riff-app.co.uk/get-started',
       metadata: { userId: user.id, plan, billing },
     });
 
