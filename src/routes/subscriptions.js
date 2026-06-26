@@ -90,7 +90,25 @@ async function subscriptionRoutes(app) {
     await prisma.user.update({ where: { id: request.user.id }, data: { plan: 'free', planExpiresAt: null } });
     return { status: 'cancelled', plan: 'free' };
   });
-
+// Verify a checkout session and activate the plan (called by mobile after Stripe redirect)
+  app.post('/verify-session', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const { sessionId } = request.body;
+    if (!sessionId || !process.env.STRIPE_SECRET_KEY) return reply.status(400).send({ error: 'Missing session' });
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.payment_status === 'paid' && session.metadata?.plan) {
+        await prisma.user.update({
+          where: { id: request.user.id },
+          data: { plan: session.metadata.plan, planExpiresAt: new Date(Date.now() + 30 * 86400000) },
+        });
+        return { status: 'activated', plan: session.metadata.plan };
+      }
+      return { status: 'pending' };
+    } catch (err) {
+      return reply.status(400).send({ error: 'Could not verify session' });
+    }
+  });
   // Stripe webhook for subscription events
   app.post('/webhook', async (request, reply) => {
     if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) return { received: true };
