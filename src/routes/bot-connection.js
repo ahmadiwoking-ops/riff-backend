@@ -103,13 +103,12 @@ async function botConnectionRoutes(app) {
     // Check subscription
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
-      select: { botConnectionPlan: true, botConnectionExpiresAt: true },
+      select: { plan: true, botConnectionPlan: true, botConnectionExpiresAt: true, planExpiresAt: true },
     });
-
-    const isActive = user.botConnectionPlan === 'bot_connection' &&
-      (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date());
-
-    if (!isActive) {
+    const paidPlans = ['bot_connection', 'explorer', 'inner_circle', 'single'];
+    const hasBotPlan = user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date());
+    const hasAppPlan = paidPlans.includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date());
+    if (!hasBotPlan && !hasAppPlan) {
       return reply.code(403).send({ error: 'Bot Connection subscription required', code: 'NO_SUBSCRIPTION' });
     }
 
