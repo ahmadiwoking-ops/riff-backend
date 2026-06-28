@@ -280,7 +280,6 @@ async function gameRoutes(app) {
 
   // NEXT ROUND — pull from pre-generated rounds
   app.post('/:gameId/next-round', { preHandler: [app.authenticate] }, async (request) => {
-  try {
     const game = await prisma.circleGame.findUnique({
       where: { id: request.params.gameId },
       include: { responses: true, circle: { include: { members: { where: { isActive: true }, include: { user: { select: { id: true, alias: true } } } } } } },
@@ -321,10 +320,6 @@ async function gameRoutes(app) {
   app.post('/:gameId/end', { preHandler: [app.authenticate] }, async (request) => {
     return { game: await prisma.circleGame.update({ where: { id: request.params.gameId }, data: { status: 'completed', completedAt: new Date() } }) };
   });
-} catch (err) {
-      request.log.error(err);
-      return { error: 'Failed to advance round: ' + (err.message || 'unknown error'), done: false };
-    }
 
   // GET GAME
   app.get('/:gameId', { preHandler: [app.authenticate] }, async (request) => {
