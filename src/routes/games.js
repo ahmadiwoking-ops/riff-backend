@@ -60,7 +60,7 @@ async function autoRespondBotsGuess(gameId, circleId, currentRound, submissions)
     var circle = await prisma.circle.findUnique({ where: { id: circleId }, include: { members: { where: { isActive: true }, include: { user: true } } } });
     if (!circle) return;
     // Use roundNum + 0.5 to differentiate guess responses from submit responses
-    var guessRound = currentRound + 0.5;
+    var guessRound = currentRound + 1000;
     var existing = await prisma.gameResponse.findMany({ where: { gameId: gameId, roundNum: guessRound } });
     var responded = existing.map(function(r) { return r.userId; });
     for (var i = 0; i < circle.members.length; i++) {
@@ -189,7 +189,7 @@ async function gameRoutes(app) {
 
       // ═══ TWO TRUTHS: GUESS PHASE ═══
       if (game.gameType === 'two_truths' && game.data.phase === 'guess') {
-        var guessRound = currentRound + 0.5;
+        var guessRound = currentRound + 1000;
         var existingGuess = await prisma.gameResponse.findFirst({ where: { gameId: game.id, userId: request.user.id, roundNum: guessRound } });
         if (existingGuess) return { alreadyResponded: true, phase: 'guess' };
         await prisma.gameResponse.create({ data: { gameId: game.id, userId: request.user.id, roundNum: guessRound, response: response || {} } });
