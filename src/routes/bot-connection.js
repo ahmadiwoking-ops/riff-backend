@@ -119,9 +119,10 @@ async function botConnectionRoutes(app) {
     }
 
     // Get persona from DB or use requested one
-    const personaRecord = persona
+    var personaRecord = persona
       ? await prisma.botPersona.findFirst({ where: { alias: persona } })
       : await prisma.botPersona.findFirst({ where: { alias: 'Luna' } });
+    if (!personaRecord && persona) personaRecord = { alias: persona };
 
     // Generate text response via Kimi
     const response = await generateKimiResponse(
