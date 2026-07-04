@@ -128,7 +128,7 @@ async function botConnectionRoutes(app) {
       personaRecord,
       message,
       conversationHistory || [],
-      mode || 'chat',
+      mode || (mode || 'chat'),
       gameContext
     );
 
@@ -155,7 +155,7 @@ async function botConnectionRoutes(app) {
 
   // ═══ Demo chat (no subscription required, limited) ═══
   app.post('/demo', async (request, reply) => {
-    const { message, conversationHistory, persona } = request.body;
+    const { message, conversationHistory, persona, mode } = request.body;
 
     if (!message) return reply.code(400).send({ error: 'Message required' });
 
@@ -167,7 +167,7 @@ async function botConnectionRoutes(app) {
       personaRecord,
       message,
       conversationHistory || [],
-      'chat',
+      (mode || 'chat'),
       null
     );
 
