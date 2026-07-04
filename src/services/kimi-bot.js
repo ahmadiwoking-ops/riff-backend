@@ -184,7 +184,7 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
           console.log('[kimi-bot] AFTER FILTER:', text ? text.substring(0, 200) : 'EMPTY');
         }
       }
-      if (!text) text = "hmm, that is a big thing to share. no judgment from me — but please talk to someone you trust about it, yeah?";
+      if (!text) text = "hmm, that's a great question honestly. tell me more about what you're thinking and i'll share my take on it";
 
       const outSafety = scanMessage(text);
       if (outSafety && outSafety.severity === 'critical') text = "let us change direction. tell me something good that happened this week?";
