@@ -144,7 +144,7 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
 
       const res = await kimiClient.chat.completions.create({
         model: KIMI_MODEL,
-        max_tokens: 1024,
+        max_tokens: 2048,
         temperature: 1,
         messages: [{ role: 'system', content: system }, ...msgs],
         extra_body: { thinking: { type: 'disabled' } },
