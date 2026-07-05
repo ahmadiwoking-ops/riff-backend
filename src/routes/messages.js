@@ -11,24 +11,16 @@ async function messageRoutes(app) {
     const message = await prisma.message.create({ data: { connectionId, circleId, senderId: request.user.id, content, type: type || 'text' }, include: { sender: { select: { alias: true } } } });
     return { message };
   });
-}
-module.exports = messageRoutes;
-
-  // Get or create a connection between two matched users
   app.post('/connect', { preHandler: [app.authenticate] }, async (request) => {
     var matchId = request.body.matchId;
     var score = parseFloat(request.body.score) || 50;
     if (!matchId) return { error: 'matchId required' };
     var myId = request.user.id;
     var ids = [myId, matchId].sort();
-    // Check if connection exists in either direction
-    var existing = await prisma.connection.findFirst({
-      where: { OR: [{ userAId: ids[0], userBId: ids[1] }, { userAId: ids[1], userBId: ids[0] }] },
-    });
+    var existing = await prisma.connection.findFirst({ where: { OR: [{ userAId: ids[0], userBId: ids[1] }, { userAId: ids[1], userBId: ids[0] }] } });
     if (existing) return { connection: existing };
-    // Create new connection
-    var conn = await prisma.connection.create({
-      data: { userAId: ids[0], userBId: ids[1], compatScore: score, stage: 'text' },
-    });
+    var conn = await prisma.connection.create({ data: { userAId: ids[0], userBId: ids[1], compatScore: score, stage: 'text' } });
     return { connection: conn };
   });
+}
+module.exports = messageRoutes;
