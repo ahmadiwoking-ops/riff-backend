@@ -19,7 +19,7 @@ async function messageRoutes(app) {
     var ids = [myId, matchId].sort();
     var existing = await prisma.connection.findFirst({ where: { OR: [{ userAId: ids[0], userBId: ids[1] }, { userAId: ids[1], userBId: ids[0] }] } });
     if (existing) return { connection: existing };
-    var conn = await prisma.connection.create({ data: { userAId: ids[0], userBId: ids[1], compatScore: score, stage: 'text' } });
+    var conn = await prisma.connection.create({ data: { userAId: ids[0], userBId: ids[1], compatScore: score, stage: 'questioning' } });
     return { connection: conn };
   });
 }
