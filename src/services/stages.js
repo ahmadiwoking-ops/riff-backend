@@ -10,8 +10,8 @@ const STAGE_GATES = {
   voice: { next: 'scoring', check: async (cId, uId) => {
     const conn = await prisma.connection.findUnique({ where: { id: cId } });
     const other = conn.userAId === uId ? conn.userBId : conn.userAId;
-    const yours = await prisma.voiceMessage.count({ where: { connectionId: cId, senderId: uId } });
-    const theirs = await prisma.voiceMessage.count({ where: { connectionId: cId, senderId: other } });
+    const yours = await prisma.message.count({ where: { connectionId: cId, senderId: uId, type: 'voice' } });
+    const theirs = await prisma.message.count({ where: { connectionId: cId, senderId: other, type: 'voice' } });
     if (yours >= 5 && theirs >= 5) return { allowed: true };
     return { allowed: false, reason: 'Exchange more voice messages', progress: { yourVoices: yours, theirVoices: theirs, yourRemaining: Math.max(0, 5 - yours), theirRemaining: Math.max(0, 5 - theirs) } };
   }},
