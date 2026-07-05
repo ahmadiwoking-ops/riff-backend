@@ -218,19 +218,24 @@ function needsStrengthMatch(need, strength, canTeach) {
 // Find best matches for a user
 async function findMatches(prisma, userId, limit) {
   var user = await prisma.user.findUnique({ where: { id: userId }, select: { connectionType: true } });
-  var userAnswers = await prisma.questionAnswer.findMany({ where: { userId: userId } });
+  var userData = await prisma.user.findUnique({ where: { id: userId }, select: { matchVector: true } });
+  var userAnswers = userData && userData.matchVector && userData.matchVector.answers
+    ? Object.keys(userData.matchVector.answers).map(function(qId) { return { questionId: qId, answer: userData.matchVector.answers[qId].answer }; })
+    : [];
   if (userAnswers.length === 0) return [];
 
   // Get all other users with answers
   var otherUsers = await prisma.user.findMany({
-    where: { id: { not: userId }, questionAnswers: { some: {} } },
-    select: { id: true, alias: true, connectionType: true },
+    where: { id: { not: userId }, matchVector: { not: null } },
+    select: { id: true, alias: true, connectionType: true, matchVector: true },
   });
 
   var scores = [];
   for (var i = 0; i < otherUsers.length; i++) {
     var other = otherUsers[i];
-    var otherAnswers = await prisma.questionAnswer.findMany({ where: { userId: other.id } });
+    var otherAnswers = other.matchVector && other.matchVector.answers
+      ? Object.keys(other.matchVector.answers).map(function(qId) { return { questionId: qId, answer: other.matchVector.answers[qId].answer }; })
+      : [];
     var score = calculateMatchScore(userAnswers, otherAnswers, user.connectionType || 'all');
     if (score.overall >= 60) {
       scores.push({ userId: other.id, alias: other.alias, score: score.overall, breakdown: score.breakdown, zodiac: score.zodiacSigns });
@@ -247,7 +252,10 @@ async function findCircleGroup(prisma, userId) {
   if (matches.length < 3) return null;
 
   // Try to assemble a group where every pair has >60% compatibility
-  var userAnswers = await prisma.questionAnswer.findMany({ where: { userId: userId } });
+  var userData = await prisma.user.findUnique({ where: { id: userId }, select: { matchVector: true } });
+  var userAnswers = userData && userData.matchVector && userData.matchVector.answers
+    ? Object.keys(userData.matchVector.answers).map(function(qId) { return { questionId: qId, answer: userData.matchVector.answers[qId].answer }; })
+    : [];
   var userMap = {};
   userAnswers.forEach(function(a) { userMap[a.questionId] = a.answer; });
 

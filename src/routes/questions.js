@@ -17,29 +17,28 @@ async function questionRoutes(app) {
     // Delete existing answers for this user (re-submission allowed)
     await prisma.questionAnswer.deleteMany({ where: { userId: request.user.id } });
 
-    // Save all answers
+    // Store all answers in user's matchVector as JSON
+    var answerMap = {};
     for (const ans of answers) {
-      await prisma.questionAnswer.create({
-        data: {
-          userId: request.user.id,
-          questionId: ans.questionId,
-          layer: ans.layer,
-          answer: typeof ans.answer === 'string' ? ans.answer : JSON.stringify(ans.answer),
-        },
-      });
+      answerMap[ans.questionId] = { layer: ans.layer, answer: ans.answer };
     }
 
-    // Derive zodiac from answers and update user
-    const zodiacAnswer = answers.find(function(a) { return a.questionId === 'q21'; });
-    if (zodiacAnswer && zodiacAnswer.answer) {
-      var sign = zodiacAnswer.answer;
-      if (sign === "I don't know") sign = null; // Will derive from DOB later
-      // Store zodiac sign in matchVector for now
-      await prisma.user.update({
-        where: { id: request.user.id },
-        data: { matchVector: { zodiacSign: sign, answeredAt: new Date().toISOString(), questionCount: answers.length } },
-      });
-    }
+    // Derive zodiac from answers
+    var zodiacAnswer = answers.find(function(a) { return a.questionId === 'q21'; });
+    var zodiacSign = zodiacAnswer ? zodiacAnswer.answer : null;
+    if (zodiacSign === "I don't know") zodiacSign = null;
+
+    await prisma.user.update({
+      where: { id: request.user.id },
+      data: {
+        matchVector: {
+          answers: answerMap,
+          zodiacSign: zodiacSign,
+          answeredAt: new Date().toISOString(),
+          questionCount: answers.length,
+        },
+      },
+    });
 
     // Find initial matches
     try {
@@ -82,8 +81,10 @@ async function questionRoutes(app) {
   // ═══ COMPARE WITH SPECIFIC USER ═══
   app.get('/compare/:otherId', { preHandler: [app.authenticate] }, async (request) => {
     try {
-      var myAnswers = await prisma.questionAnswer.findMany({ where: { userId: request.user.id } });
-      var theirAnswers = await prisma.questionAnswer.findMany({ where: { userId: request.params.otherId } });
+      var myData = await prisma.user.findUnique({ where: { id: request.user.id }, select: { matchVector: true } });
+  var myAnswers = myData && myData.matchVector && myData.matchVector.answers ? Object.keys(myData.matchVector.answers).map(function(qId) { return { questionId: qId, answer: myData.matchVector.answers[qId].answer }; }) : [];
+  var theirData = await prisma.user.findUnique({ where: { id: request.params.otherId }, select: { matchVector: true } });
+  var theirAnswers = theirData && theirData.matchVector && theirData.matchVector.answers ? Object.keys(theirData.matchVector.answers).map(function(qId) { return { questionId: qId, answer: theirData.matchVector.answers[qId].answer }; }) : [];
       var user = await prisma.user.findUnique({ where: { id: request.user.id }, select: { connectionType: true } });
       if (myAnswers.length === 0 || theirAnswers.length === 0) return { error: 'Both users must complete questions' };
       var score = calculateMatchScore(myAnswers, theirAnswers, user.connectionType || 'all');
