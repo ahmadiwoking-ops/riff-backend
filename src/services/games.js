@@ -173,7 +173,7 @@ function formatRound(type, item) {
     return { question: item, options: ['Strongly agree', 'Agree', 'Disagree', 'Strongly disagree'], type: 'opinion' };
   }
   if (type === 'this_or_that') {
-    return { question: 'Pick one and explain why:', options: [item[0], item[1]], type: 'choice' };
+    return { question: item[0] + ' or ' + item[1] + '?', options: [item[0], item[1]], type: 'choice' };
   }
   if (type === 'desert_island') {
     return { question: item, type: 'open' };
