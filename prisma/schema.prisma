@@ -31,6 +31,7 @@ model User {
   plan            String   @default("free")
   stripeCustomerId String?
   planExpiresAt   DateTime?
+  matchVector       Json?
   pushToken       String?
   isActive        Boolean  @default(true)
   isBanned        Boolean  @default(false)
