@@ -66,6 +66,7 @@ module.exports = async function (fastify, opts) {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  fastify.addHook("preHandler", async function(request, reply) { if (request.url.indexOf("/webhook") !== -1) return; try { await fastify.authenticate(request, reply); } catch (e) {} });
   // 1) CREATE VERIFF SESSION
   // ── Status endpoint ──
   fastify.get("/status", async (request, reply) => {
