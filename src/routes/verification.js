@@ -67,6 +67,14 @@ module.exports = async function (fastify, opts) {
 
   // ───────────────────────────────────────────────────────────────────────────
   // 1) CREATE VERIFF SESSION
+  // ── Status endpoint ──
+  fastify.get("/status", async (request, reply) => {
+    var userId = requireUserId(request, reply); if (!userId) return;
+    var user = await prisma.user.findUnique({ where: { id: userId }, select: { selfieVerified: true, idVerified: true, phoneVerified: true, trustScore: true } });
+    if (!user) return reply.code(404).send({ error: "User not found" });
+    return { selfie: user.selfieVerified || false, id: user.idVerified || false, phone: user.phoneVerified || false, trustScore: user.trustScore || "unverified" };
+  });
+
   //    Mobile calls this, then opens the returned `url` with Linking.openURL().
   // ───────────────────────────────────────────────────────────────────────────
   fastify.post('/create-session', async (request, reply) => {
