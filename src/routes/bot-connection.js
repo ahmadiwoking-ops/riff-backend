@@ -214,7 +214,6 @@ async function botConnectionRoutes(app) {
     });
     return { status: 'cancelled' };
   });
-}
 
 
   // ═══ Save bot chat message ═══
