@@ -25,7 +25,7 @@ async function botConnectionRoutes(app) {
   app.get('/status', { preHandler: [app.authenticate] }, async (request) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
-      select: { botConnectionPlan: true, botConnectionExpiresAt: true },
+      select: { plan: true, planExpiresAt: true, botConnectionPlan: true, botConnectionExpiresAt: true },
     });
 
     const usage = await checkUsage(request.user.id);
