@@ -33,10 +33,10 @@ async function botConnectionRoutes(app) {
     const remaining = Math.max(0, limit - usage.messageCount);
 
     return {
-      plan: user.botConnectionPlan || 'none',
+      plan: user.botConnectionPlan || user.plan || 'none',
       expiresAt: user.botConnectionExpiresAt,
       usage: { used: usage.messageCount, limit, remaining },
-      active: user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date()),
+      active: (user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date())) || (['bot_connection','explorer','inner_circle'].includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date())),
     };
   });
 
