@@ -32,14 +32,20 @@ async function questionRoutes(app) {
   });
 
   app.get('/matches', { preHandler: [app.authenticate] }, async (request) => {
-    var user = await prisma.user.findUnique({ where: { id: request.user.id }, select: { matchVector: true } });
+    var userPlan = await prisma.user.findUnique({ where: { id: request.user.id }, select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true } });
+    var plan = (userPlan && userPlan.plan) || 'free';
+    if (userPlan && userPlan.planExpiresAt && userPlan.planExpiresAt < new Date()) plan = 'free';
+    var MATCH_LIMITS = { free: 1, explorer: 3, inner_circle: 10, bot_connection: 0 };
+    var matchLimit = MATCH_LIMITS[plan] !== undefined ? MATCH_LIMITS[plan] : 1;
+    if (matchLimit === 0) return { matches: [], plan: plan, message: 'Upgrade to see matches' };
+    var user = userPlan;
     if (!user || !user.matchVector || !user.matchVector.answers) return { matches: [] };
     if (user.matchVector.cachedMatches && user.matchVector.cachedAt) {
       var cacheAge = Date.now() - new Date(user.matchVector.cachedAt).getTime();
-      if (cacheAge < 15 * 60 * 1000) return { matches: user.matchVector.cachedMatches, cached: true };
+      if (cacheAge < 15 * 60 * 1000) return { matches: user.matchVector.cachedMatches.slice(0, matchLimit), cached: true, plan: plan, totalAvailable: user.matchVector.cachedMatches.length };
     }
     var matches = await runMatching(request.user.id);
-    return { matches: matches };
+    return { matches: matches.slice(0, matchLimit), plan: plan, totalAvailable: matches.length };
   });
 
   app.post('/refresh-matches', { preHandler: [app.authenticate] }, async (request) => {
