@@ -216,4 +216,41 @@ async function botConnectionRoutes(app) {
   });
 }
 
+
+  // ═══ Save bot chat message ═══
+  app.post('/save-message', { preHandler: [app.authenticate] }, async (request) => {
+    var { persona, role, text } = request.body;
+    if (!persona || !text) return { error: 'persona and text required' };
+    await prisma.message.create({
+      data: { senderId: request.user.id, circleId: 'bot_' + persona, type: role === 'user' ? 'bot_user' : 'bot_reply', content: text },
+    });
+    return { saved: true };
+  });
+
+  // ═══ Load bot chat history ═══
+  app.get('/history/:persona', { preHandler: [app.authenticate] }, async (request) => {
+    var messages = await prisma.message.findMany({
+      where: { senderId: request.user.id, circleId: 'bot_' + request.params.persona },
+      orderBy: { createdAt: 'asc' }, take: 100,
+      select: { id: true, type: true, content: true, createdAt: true },
+    });
+    return { messages: messages.map(function(m) { return { id: m.id, role: m.type === 'bot_user' ? 'user' : 'bot', text: m.content, timestamp: m.createdAt.getTime() }; }) };
+  });
+
+  // ═══ List bot conversations ═══
+  app.get('/conversations', { preHandler: [app.authenticate] }, async (request) => {
+    var msgs = await prisma.message.findMany({
+      where: { senderId: request.user.id, circleId: { startsWith: 'bot_' } },
+      orderBy: { createdAt: 'desc' },
+      select: { circleId: true, content: true, createdAt: true, type: true },
+    });
+    var convos = {};
+    msgs.forEach(function(m) {
+      var p = m.circleId.replace('bot_', '');
+      if (!convos[p]) convos[p] = { persona: p, lastMessage: m.content, lastAt: m.createdAt, messageCount: 0 };
+      convos[p].messageCount++;
+    });
+    return { conversations: Object.values(convos) };
+  });
+
 module.exports = botConnectionRoutes;
