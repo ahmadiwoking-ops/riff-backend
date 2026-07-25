@@ -92,7 +92,22 @@ async function subscriptionRoutes(app) {
   });
 // Mobile payment success page
   app.get('/payment-success', async (request, reply) => {
-    reply.type('text/html').send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment Complete</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0A0E18;color:#F0ECE5;font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:24px;text-align:center}.card{max-width:380px}.icon{font-size:64px;margin-bottom:16px}h1{font-size:24px;font-weight:800;margin-bottom:8px}p{color:#8B8B96;font-size:15px;line-height:1.5;margin-bottom:24px}.btn{display:inline-block;background:#22D3EE;color:#0A0E18;font-size:16px;font-weight:700;padding:14px 32px;border-radius:12px;text-decoration:none}.sub{color:#4A4A54;font-size:13px;margin-top:16px}</style></head><body><div class="card"><div class="icon">✅</div><h1>Payment Complete!</h1><p>Your subscription is now active.<br>Go back to the Riff app to continue.</p><a href="riff://verification?onboarding=true" class="btn">Open Riff App</a><p class="sub">If the button doesn't work, switch back to the app manually.</p></div></body></html>`);
+    reply.type('text/html').send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment Complete</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0A0E18;color:#F0ECE5;font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:24px;text-align:center}.card{max-width:380px}.spinner{width:40px;height:40px;border:3px solid rgba(34,211,238,0.2);border-top:3px solid #22D3EE;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 20px}@keyframes spin{to{transform:rotate(360deg)}}h1{font-size:22px;font-weight:800;margin-bottom:8px;color:#22D3EE}p{color:#8B8B96;font-size:14px;line-height:1.5;margin-bottom:16px}.sub{color:#4A4A54;font-size:12px;margin-top:20px}</style>
+<script>
+var tried = false;
+function goBack() {
+  if (tried) return;
+  tried = true;
+  // Try closing this browser tab/window first
+  window.close();
+  // If still here after 500ms, try deep link
+  setTimeout(function() { window.location.href = 'riff://(tabs)/home'; }, 500);
+}
+// Auto-trigger after 2 seconds
+setTimeout(goBack, 2000);
+</script>
+</head><body><div class="card"><div class="spinner"></div><h1>Payment Complete</h1><p>Your subscription is now active.<br>Redirecting you back to the app...</p><p class="sub">If you are not redirected automatically,<br>switch back to the Riff app manually.</p></div></body></html>`);
   });
 // Verify a checkout session and activate the plan (called by mobile after Stripe redirect)
   app.post('/verify-session', { preHandler: [app.authenticate] }, async (request, reply) => {
