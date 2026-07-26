@@ -292,5 +292,26 @@ async function botConnectionRoutes(app) {
     return { checkoutUrl: session.url, sessionId: session.id };
   });
 
+
+  // ═══ Public web demo (no auth — for marketing website) ═══
+  var webDemoHits = {};
+  app.post('/web-demo', async (request, reply) => {
+    var ip = request.headers['x-forwarded-for'] || request.ip || 'unknown';
+    var now = Date.now();
+    if (!webDemoHits[ip]) webDemoHits[ip] = [];
+    webDemoHits[ip] = webDemoHits[ip].filter(function(t) { return now - t < 3600000; });
+    if (webDemoHits[ip].length >= 30) {
+      return reply.code(429).send({ response: "thanks for trying the demo! download the app to keep chatting with me.", rateLimited: true });
+    }
+    webDemoHits[ip].push(now);
+    var message = request.body.message;
+    var persona = request.body.persona;
+    var conversationHistory = request.body.conversationHistory || [];
+    if (!message) return reply.code(400).send({ error: 'Message required' });
+    var personaRecord = persona ? await prisma.botPersona.findFirst({ where: { alias: persona } }) : await prisma.botPersona.findFirst({ where: { alias: 'Luna' } });
+    var response = await generateKimiResponse(personaRecord || { alias: persona || 'Luna' }, message, conversationHistory, 'chat', null);
+    return { response: response.text, persona: personaRecord ? personaRecord.alias : (persona || 'Luna') };
+  });
+
 }
 module.exports = botConnectionRoutes;
