@@ -29,7 +29,7 @@ async function botConnectionRoutes(app) {
     });
 
     const usage = await checkUsage(request.user.id);
-    const limit = 500;
+    const limit = 500 + (usage.bonusMessages || 0);
     const remaining = Math.max(0, limit - usage.messageCount);
 
     return {
@@ -114,8 +114,9 @@ async function botConnectionRoutes(app) {
 
     // Check usage limit
     const usage = await checkUsage(request.user.id);
-    if (usage.messageCount >= 500) {
-      return reply.code(429).send({ error: 'Monthly message limit reached (500/500). Resets on the 1st.', code: 'LIMIT_REACHED' });
+    const effectiveLimit = 500 + (usage.bonusMessages || 0);
+    if (usage.messageCount >= effectiveLimit) {
+      return reply.code(429).send({ error: 'Message limit reached (' + usage.messageCount + '/' + effectiveLimit + '). Buy more credits or wait for reset.', code: 'LIMIT_REACHED' });
     }
 
     // Get persona from DB or use requested one
@@ -150,7 +151,7 @@ async function botConnectionRoutes(app) {
       source: response.source,
       persona: personaRecord?.alias || 'Luna',
       audio: audio || null,
-      usage: { used: usage.messageCount + 1, limit: 500, remaining: Math.max(0, 499 - usage.messageCount) },
+      usage: { used: usage.messageCount + 1, limit: effectiveLimit, remaining: Math.max(0, effectiveLimit - usage.messageCount - 1) },
     };
   });
 
@@ -253,4 +254,42 @@ async function botConnectionRoutes(app) {
   });
 
 }
+
+  // ═══ Buy message credits (one-time purchase) ═══
+  app.post('/buy-credits', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var pack = request.body.pack;
+    var PACKS = {
+      pack100: { messages: 100, priceKey: 'STRIPE_PRICE_CREDITS_100' },
+      pack200: { messages: 200, priceKey: 'STRIPE_PRICE_CREDITS_200' },
+      pack300: { messages: 300, priceKey: 'STRIPE_PRICE_CREDITS_300' },
+      pack400: { messages: 400, priceKey: 'STRIPE_PRICE_CREDITS_400' },
+      pack500: { messages: 500, priceKey: 'STRIPE_PRICE_CREDITS_500' },
+    };
+    var selected = PACKS[pack];
+    if (!selected) return reply.code(400).send({ error: 'Invalid pack' });
+    var now = new Date();
+    var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    if (!process.env.STRIPE_SECRET_KEY) {
+      var usage = await prisma.botConnectionUsage.findFirst({ where: { userId: request.user.id, monthStart: monthStart } });
+      if (!usage) usage = await prisma.botConnectionUsage.create({ data: { userId: request.user.id, monthStart: monthStart, messageCount: 0, bonusMessages: 0 } });
+      await prisma.botConnectionUsage.update({ where: { id: usage.id }, data: { bonusMessages: { increment: selected.messages } } });
+      return { status: 'added', messages: selected.messages, demo: true };
+    }
+    var priceId = process.env[selected.priceKey];
+    if (!priceId) return reply.code(400).send({ error: 'Price not configured for ' + pack });
+    var stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    var user = await prisma.user.findUnique({ where: { id: request.user.id }, select: { email: true, stripeCustomerId: true } });
+    var session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: user.stripeCustomerId ? undefined : user.email,
+      customer: user.stripeCustomerId || undefined,
+      success_url: 'https://api.riff-app.co.uk/api/subscriptions/payment-success',
+      cancel_url: 'riff://bot-connection',
+      metadata: { userId: request.user.id, type: 'message_credits', messages: String(selected.messages) },
+    });
+    return { checkoutUrl: session.url, sessionId: session.id };
+  });
+
 module.exports = botConnectionRoutes;
