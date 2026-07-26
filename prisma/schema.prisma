@@ -329,7 +329,6 @@ model BotConnectionUsage {
   monthStart   DateTime
   messageCount Int      @default(0)
   bonusMessages Int    @default(0)
-  bonusMessages Int    @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   @@unique([userId, monthStart])
