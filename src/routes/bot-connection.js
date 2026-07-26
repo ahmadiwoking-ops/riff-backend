@@ -253,7 +253,7 @@ async function botConnectionRoutes(app) {
     return { conversations: Object.values(convos) };
   });
 
-}
+
 
   // ═══ Buy message credits (one-time purchase) ═══
   app.post('/buy-credits', { preHandler: [app.authenticate] }, async (request, reply) => {
@@ -292,4 +292,5 @@ async function botConnectionRoutes(app) {
     return { checkoutUrl: session.url, sessionId: session.id };
   });
 
+}
 module.exports = botConnectionRoutes;
