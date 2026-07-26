@@ -151,6 +151,18 @@ setTimeout(goBack, 2000);
         await prisma.botConnectionUsage.update({ where: { id: u.id }, data: { bonusMessages: { increment: msgs } } });
         return { received: true };
       }
+      const s = event.data.object;
+      // Handle message credit purchases
+      if (s.metadata && s.metadata.type === 'message_credits') {
+        const uid = s.metadata.userId;
+        const msgs = parseInt(s.metadata.messages) || 0;
+        const now = new Date();
+        const mStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        let u = await prisma.botConnectionUsage.findFirst({ where: { userId: uid, monthStart: mStart } });
+        if (!u) u = await prisma.botConnectionUsage.create({ data: { userId: uid, monthStart: mStart, messageCount: 0, bonusMessages: 0 } });
+        await prisma.botConnectionUsage.update({ where: { id: u.id }, data: { bonusMessages: { increment: msgs } } });
+        return { received: true };
+      }
       const session = event.data.object;
       const { userId, plan } = session.metadata;
       if (userId && plan) {
