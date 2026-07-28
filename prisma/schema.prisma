@@ -108,6 +108,15 @@ model Connection {
   userADecision    String?
   userBDecision    String?
   decisionDeadline DateTime?
+  userAPhoto       String?
+  userBPhoto       String?
+  videoStartedAt   DateTime?
+  userAFinalDecision String?
+  userBFinalDecision String?
+  userAGoodbye     String?
+  userBGoodbye     String?
+  endedAt          DateTime?
+  endReason        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   userA            User     @relation("userA", fields: [userAId], references: [id])
