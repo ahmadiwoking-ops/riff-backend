@@ -1,5 +1,6 @@
 const prisma = require('../db');
 const { getLimits } = require('../services/plan-limits');
+const { getCircleStatus } = require('../services/circle-stages');
 
 async function circleRoutes(app) {
   // Get my circles
@@ -51,6 +52,108 @@ async function circleRoutes(app) {
       data: { circleId: circleId, userId: myId, alias: request.user.alias || 'Member' },
     });
     return { status: 'joined', member: member };
+  });
+
+  // ═══ Circle flow status ═══
+  app.get('/:id/status', { preHandler: [app.authenticate] }, async (request) => {
+    return await getCircleStatus(request.params.id, request.user.id);
+  });
+
+  // ═══ Opt in to voice stage ═══
+  app.post('/:id/voice-optin', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var member = await prisma.circleMember.findFirst({ where: { circleId: circleId, userId: request.user.id } });
+    if (!member) return { error: 'Not a member' };
+    await prisma.circleMember.update({ where: { id: member.id }, data: { voiceOptIn: true } });
+    var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
+    var allIn = members.length > 0 && members.every(function(m) { return m.voiceOptIn; });
+    if (allIn) {
+      await prisma.circle.update({ where: { id: circleId }, data: { voiceStageOpen: true, stage: 'voice' } });
+      return { status: 'voice_open', message: 'Everyone opted in — voice stage is now open!', allIn: true };
+    }
+    var optedIn = members.filter(function(m) { return m.voiceOptIn; }).length;
+    return { status: 'waiting', message: 'Waiting for all members to open this stage (' + optedIn + '/' + members.length + ')', allIn: false };
+  });
+
+  // ═══ Increment message counts ═══
+  app.post('/:id/count', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var type = request.body.type;
+    var member = await prisma.circleMember.findFirst({ where: { circleId: circleId, userId: request.user.id } });
+    if (!member) return { error: 'Not a member' };
+    var field = type === 'voice' ? 'voiceCount' : 'textCount';
+    var data = {}; data[field] = { increment: 1 };
+    var updated = await prisma.circleMember.update({ where: { id: member.id }, data: data });
+    var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
+    var allQualified = members.length > 0 && members.every(function(m) { return m.textCount >= 3 && m.voiceCount >= 3; });
+    if (allQualified) {
+      await prisma.circle.update({ where: { id: circleId }, data: { revealReady: true, stage: 'reveal' } });
+    }
+    return { textCount: updated.textCount, voiceCount: updated.voiceCount, revealReady: allQualified };
+  });
+
+  // ═══ Submit selfie for circle reveal ═══
+  app.post('/:id/selfie', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var photo = request.body.photo;
+    if (!photo) return { error: 'photo required' };
+    var member = await prisma.circleMember.findFirst({ where: { circleId: circleId, userId: request.user.id } });
+    if (!member) return { error: 'Not a member' };
+    await prisma.circleMember.update({ where: { id: member.id }, data: { selfiePhoto: photo, revealDecision: 'reveal' } });
+    var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
+    var allSubmitted = members.length > 0 && members.every(function(m) { return m.selfiePhoto; });
+    if (allSubmitted) {
+      await prisma.circle.update({ where: { id: circleId }, data: { revealedAt: new Date(), stage: 'connected' } });
+    }
+    return { status: 'saved', allSubmitted: allSubmitted, message: allSubmitted ? 'Everyone revealed — meet your circle!' : 'Selfie saved. Waiting for others...' };
+  });
+
+  // ═══ Get circle reveal photos ═══
+  app.get('/:id/reveal', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
+    var allSubmitted = members.length > 0 && members.every(function(m) { return m.selfiePhoto; });
+    if (!allSubmitted) return { ready: false, message: 'Waiting for all members to reveal' };
+    return { ready: true, photos: members.map(function(m) { return { userId: m.userId, alias: m.alias, photo: m.selfiePhoto }; }) };
+  });
+
+  // ═══ Decline to reveal ═══
+  app.post('/:id/decline-reveal', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var member = await prisma.circleMember.findFirst({ where: { circleId: circleId, userId: request.user.id } });
+    if (!member) return { error: 'Not a member' };
+    await prisma.circleMember.update({ where: { id: member.id }, data: { revealDecision: 'decline' } });
+    return { status: 'declined', message: 'You declined to reveal. The group will vote on whether to keep you or find a replacement.' };
+  });
+
+  // ═══ Vote to keep or replace ═══
+  app.post('/:id/vote', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var targetUserId = request.body.targetUserId;
+    var vote = request.body.vote;
+    if (!targetUserId || !vote) return { error: 'targetUserId and vote required' };
+    await prisma.circleVote.upsert({
+      where: { circleId_targetUserId_voterUserId: { circleId: circleId, targetUserId: targetUserId, voterUserId: request.user.id } },
+      update: { vote: vote },
+      create: { circleId: circleId, targetUserId: targetUserId, voterUserId: request.user.id, vote: vote },
+    });
+    var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
+    var voters = members.filter(function(m) { return m.userId !== targetUserId; });
+    var votes = await prisma.circleVote.findMany({ where: { circleId: circleId, targetUserId: targetUserId } });
+    var keepVotes = votes.filter(function(v) { return v.vote === 'keep'; }).length;
+    var replaceVotes = votes.filter(function(v) { return v.vote === 'replace'; }).length;
+    var allVoted = votes.length >= voters.length;
+    if (allVoted) {
+      if (keepVotes >= replaceVotes) {
+        await prisma.circleMember.updateMany({ where: { circleId: circleId, userId: targetUserId }, data: { revealDecision: 'kept' } });
+        return { status: 'kept', message: 'The group voted to keep the member.', keepVotes: keepVotes, replaceVotes: replaceVotes };
+      } else {
+        await prisma.circleMember.updateMany({ where: { circleId: circleId, userId: targetUserId }, data: { isActive: false } });
+        await prisma.circle.update({ where: { id: circleId }, data: { status: 'awaiting_replacement' } });
+        return { status: 'replaced', message: 'The group voted to replace the member. Finding a new member...', keepVotes: keepVotes, replaceVotes: replaceVotes };
+      }
+    }
+    return { status: 'vote_recorded', message: 'Vote recorded (' + votes.length + '/' + voters.length + ')', keepVotes: keepVotes, replaceVotes: replaceVotes };
   });
 }
 module.exports = circleRoutes;
