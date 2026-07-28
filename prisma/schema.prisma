@@ -134,6 +134,9 @@ model Circle {
   currentRound Int      @default(0)
   isActive     Boolean  @default(true)
   revealedAt   DateTime?
+  voiceStageOpen Boolean @default(false)
+  revealReady    Boolean @default(false)
+  status         String  @default("active")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   members      CircleMember[]
@@ -150,6 +153,11 @@ model CircleMember {
   isActive  Boolean  @default(true)
   photoId   String?
   voiceIntroUrl String?
+  voiceOptIn    Boolean @default(false)
+  textCount     Int     @default(0)
+  voiceCount    Int     @default(0)
+  selfiePhoto   String?
+  revealDecision String?
   circle    Circle   @relation(fields: [circleId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id])
   @@unique([circleId, userId])
@@ -342,4 +350,14 @@ model BotConnectionUsage {
   updatedAt    DateTime @updatedAt
   @@unique([userId, monthStart])
   @@index([userId])
+}
+
+model CircleVote {
+  id           String   @id @default(cuid())
+  circleId     String
+  targetUserId String
+  voterUserId  String
+  vote         String
+  createdAt    DateTime @default(now())
+  @@unique([circleId, targetUserId, voterUserId])
 }
