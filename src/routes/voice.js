@@ -1,19 +1,36 @@
 const prisma = require('../db');
+
 async function voiceRoutes(app) {
-  app.post('/upload-url', { preHandler: [app.authenticate] }, async (request) => {
-    const key = 'voice/' + request.user.id + '/' + Date.now() + '.opus';
-    return { uploadUrl: '/uploads/' + key, s3Key: key };
-  });
-  app.post('/sent', { preHandler: [app.authenticate] }, async (request) => {
-    const { connectionId, s3Key, duration } = request.body;
-    const vm = await prisma.voiceMessage.create({ data: { connectionId, senderId: request.user.id, s3Key, duration } });
-    return { voiceMessage: vm };
-  });
+  // Submit a voice score for the connection (simple 1-5 rating)
   app.post('/score', { preHandler: [app.authenticate] }, async (request) => {
-    const { connectionId, voiceMessageId, scoredId, madeSmile, feltGenuine, wantMore } = request.body;
-    const average = (madeSmile + feltGenuine + wantMore) / 3;
-    const score = await prisma.voiceScore.create({ data: { connectionId, voiceMessageId, scorerId: request.user.id, scoredId, madeSmile, feltGenuine, wantMore, average } });
-    return { score };
+    var connectionId = request.body.connectionId;
+    var score = parseFloat(request.body.score);
+    if (!connectionId || isNaN(score)) return { error: 'connectionId and score required' };
+
+    var conn = await prisma.connection.findUnique({ where: { id: connectionId } });
+    if (!conn) return { error: 'Connection not found' };
+
+    var isUserA = conn.userAId === request.user.id;
+    // Save this user's score to the correct field
+    var updateData = isUserA ? { userAVoiceAvg: score } : { userBVoiceAvg: score };
+    var updated = await prisma.connection.update({ where: { id: connectionId }, data: updateData });
+
+    var myScore = isUserA ? updated.userAVoiceAvg : updated.userBVoiceAvg;
+    var theirScore = isUserA ? updated.userBVoiceAvg : updated.userAVoiceAvg;
+
+    // Both have scored?
+    if (myScore != null && theirScore != null) {
+      if (myScore >= 4 && theirScore >= 4) {
+        // Both aligned - mark threshold met
+        await prisma.connection.update({ where: { id: connectionId }, data: { voiceThresholdMet: true } });
+        return { status: 'aligned', message: 'Your scores align — you can progress to the reveal.', myScore: myScore, theirScore: theirScore, bothScored: true, canProceed: true };
+      } else {
+        return { status: 'not_aligned', message: 'Your scores did not both reach 4/5. You can keep talking or move on.', myScore: myScore, theirScore: theirScore, bothScored: true, canProceed: false };
+      }
+    }
+
+    // Only this user has scored so far
+    return { status: 'waiting', message: 'Rating saved — waiting for ' + (isUserA ? 'their' : 'their') + ' rating.', myScore: myScore, theirScore: null, bothScored: false, canProceed: false };
   });
 }
 module.exports = voiceRoutes;
