@@ -94,7 +94,7 @@ async function connectionRoutes(app) {
     if (!conn) return { error: 'Not found' };
     // Unique deterministic room name both users share
     const room = 'riff-' + conn.id;
-    const url = 'https://meet.jit.si/' + room;
+    const url = 'https://meet.jit.si/' + room + '#config.prejoinPageEnabled=false&config.requireDisplayName=false&config.enableLobbyChat=false&config.disableModeratorIndicator=true';
     // 3-day timer info
     var hoursLeft = null;
     if (conn.videoStartedAt) {
