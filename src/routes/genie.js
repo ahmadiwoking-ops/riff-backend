@@ -114,25 +114,29 @@ async function genieRoutes(app) {
       });
       msgs.push({ role: 'user', content: String(message) });
 
-      const res = await kimiClient.chat.completions.create({
+      var res = await kimiClient.chat.completions.create({
         model: KIMI_MODEL,
-        max_tokens: 800,
+        max_tokens: 1200,
         temperature: 1,
         messages: [{ role: 'system', content: GENIE_SYSTEM }, ...msgs],
       });
-
-      var text = res.choices && res.choices[0] && res.choices[0].message ? res.choices[0].message.content : 'I could not find resources for that. Please rephrase.';
-
-      // Validate links - remove only definite dead/404 pages
+      var text = res.choices && res.choices[0] && res.choices[0].message ? (res.choices[0].message.content || '') : '';
+      console.log('[genie] AI returned ' + text.length + ' chars, finish_reason=' + (res.choices && res.choices[0] ? res.choices[0].finish_reason : 'none'));
+      if (!text || text.trim().length === 0) {
+        var retry = await kimiClient.chat.completions.create({
+          model: KIMI_MODEL, max_tokens: 1200, temperature: 1,
+          messages: [{ role: 'system', content: GENIE_SYSTEM }, ...msgs],
+        });
+        text = retry.choices && retry.choices[0] && retry.choices[0].message ? (retry.choices[0].message.content || '') : '';
+        console.log('[genie] retry returned ' + text.length + ' chars');
+      }
+      if (!text || text.trim().length === 0) {
+        return { response: 'I was unable to generate resources for that request. Please try rephrasing it.', used: usage.requestCount, limit: limit, remaining: Math.max(0, limit - usage.requestCount) };
+      }
       var originalText = text;
       try {
         var validated = await validateResourceLinks(text);
-        // If validation left almost nothing but the original had content, keep the original
-        if (validated.text.trim().length < 20 && originalText.trim().length > 20) {
-          text = originalText;
-        } else {
-          text = validated.text;
-        }
+        if (validated.text.trim().length < 20) { text = originalText; } else { text = validated.text; }
       } catch (e) { text = originalText; }
 
       // Save to history (request + response)
