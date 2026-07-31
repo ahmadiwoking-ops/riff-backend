@@ -22,6 +22,7 @@ const GENIE_SYSTEM = [
   '• Foreign Travel Advice — Official UK government travel guidance and safety information: https://www.gov.uk/foreign-travel-advice',
   '• Travel Insurance Comparison — Compare policies from trusted providers: https://www.which.co.uk/money/insurance/travel-insurance',
   '- Keep descriptions short. Always use full https:// URLs so they are clickable.',
+  '- IMPORTANT: Only link to stable, well-established pages that are very unlikely to be broken - prefer homepages and main section pages (e.g. https://www.gov.uk/browse/travel) over deep specific article URLs that may have moved. Never invent or guess specific deep URLs.',
   '- If the request is unclear or too broad, ask ONE concise clarifying question before listing resources.',
 ].join('\n');
 
@@ -33,6 +34,46 @@ async function getGenieUsage(userId) {
   var usage = await prisma.genieUsage.findFirst({ where: { userId: userId, monthStart: monthStart } });
   if (!usage) usage = await prisma.genieUsage.create({ data: { userId: userId, monthStart: monthStart, requestCount: 0, bonusRequests: 0 } });
   return usage;
+}
+
+
+// Check a single URL is live (not 404/dead). Returns true if reachable.
+async function checkLink(url) {
+  try {
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, 5000);
+    var res = await fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RiffGenie/1.0)' } });
+    clearTimeout(timer);
+    return res.status >= 200 && res.status < 400;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Extract URLs, validate them in parallel, remove lines with dead links
+async function validateResourceLinks(text) {
+  var lines = text.split('\n');
+  var urlRegex = /(https?:\/\/[^\s)]+)/;
+  // Gather all URLs with their line index
+  var checks = [];
+  lines.forEach(function(line, i) {
+    var m = line.match(urlRegex);
+    if (m) {
+      var url = m[1].replace(/[.,)]+$/, '');
+      checks.push({ index: i, url: url });
+    }
+  });
+  if (checks.length === 0) return { text: text, removed: 0 };
+  // Check all in parallel
+  var results = await Promise.all(checks.map(function(c) { return checkLink(c.url); }));
+  var deadIndexes = {};
+  var removed = 0;
+  checks.forEach(function(c, i) {
+    if (!results[i]) { deadIndexes[c.index] = true; removed++; }
+  });
+  // Rebuild text without the dead-link lines
+  var kept = lines.filter(function(line, i) { return !deadIndexes[i]; });
+  return { text: kept.join('\n'), removed: removed };
 }
 
 async function genieRoutes(app) {
@@ -74,7 +115,29 @@ async function genieRoutes(app) {
         messages: [{ role: 'system', content: GENIE_SYSTEM }, ...msgs],
       });
 
-      const text = res.choices && res.choices[0] && res.choices[0].message ? res.choices[0].message.content : 'I could not find resources for that. Please rephrase.';
+      var text = res.choices && res.choices[0] && res.choices[0].message ? res.choices[0].message.content : 'I could not find resources for that. Please rephrase.';
+
+      // Validate links - remove any dead/404 pages
+      var validated = await validateResourceLinks(text);
+      text = validated.text;
+
+      // If links were removed, ask Genie once for verified alternatives
+      if (validated.removed > 0) {
+        try {
+          var retryMsgs = [
+            { role: 'system', content: GENIE_SYSTEM },
+            { role: 'user', content: String(message) },
+            { role: 'assistant', content: text },
+            { role: 'user', content: 'Some links were unavailable and removed. Please provide ' + validated.removed + ' additional verified resource(s) for the same request, using only well-known homepage or main-section URLs that are very unlikely to be broken (e.g. https://www.gov.uk, https://www.nhs.uk). List only the new resources in the same bullet format.' },
+          ];
+          var retry = await kimiClient.chat.completions.create({ model: KIMI_MODEL, max_tokens: 1024, temperature: 1, messages: retryMsgs });
+          var extra = retry.choices && retry.choices[0] && retry.choices[0].message ? retry.choices[0].message.content : '';
+          if (extra) {
+            var extraValidated = await validateResourceLinks(extra);
+            if (extraValidated.text.trim()) text = text + '\n' + extraValidated.text;
+          }
+        } catch (e) {}
+      }
 
       // Increment usage
       await prisma.genieUsage.update({ where: { id: usage.id }, data: { requestCount: { increment: 1 } } });
