@@ -116,7 +116,7 @@ async function genieRoutes(app) {
 
       const res = await kimiClient.chat.completions.create({
         model: KIMI_MODEL,
-        max_tokens: 2048,
+        max_tokens: 800,
         temperature: 1,
         messages: [{ role: 'system', content: GENIE_SYSTEM }, ...msgs],
       });
