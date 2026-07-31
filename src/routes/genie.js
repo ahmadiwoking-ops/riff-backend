@@ -1,5 +1,6 @@
-// src/routes/genie.js — standalone Genie resources assistant, independent of persona code
+// src/routes/genie.js — standalone Genie resources assistant with 20/month limit + credit top-ups
 const OpenAI = require('openai');
+const prisma = require('../db');
 
 const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 let kimiClient = null;
@@ -24,11 +25,36 @@ const GENIE_SYSTEM = [
   '- If the request is unclear or too broad, ask ONE concise clarifying question before listing resources.',
 ].join('\n');
 
+const FREE_LIMIT = 20;
+
+async function getGenieUsage(userId) {
+  var now = new Date();
+  var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  var usage = await prisma.genieUsage.findFirst({ where: { userId: userId, monthStart: monthStart } });
+  if (!usage) usage = await prisma.genieUsage.create({ data: { userId: userId, monthStart: monthStart, requestCount: 0, bonusRequests: 0 } });
+  return usage;
+}
+
 async function genieRoutes(app) {
+  // Get Genie usage/status
+  app.get('/status', { preHandler: [app.authenticate] }, async (request) => {
+    var usage = await getGenieUsage(request.user.id);
+    var limit = FREE_LIMIT + (usage.bonusRequests || 0);
+    return { used: usage.requestCount, limit: limit, remaining: Math.max(0, limit - usage.requestCount), bonusRequests: usage.bonusRequests || 0 };
+  });
+
+  // Ask Genie
   app.post('/ask', { preHandler: [app.authenticate] }, async (request, reply) => {
     const message = request.body.message;
     const history = request.body.conversationHistory || [];
     if (!message) return reply.code(400).send({ error: 'message required' });
+
+    // Check limit
+    var usage = await getGenieUsage(request.user.id);
+    var limit = FREE_LIMIT + (usage.bonusRequests || 0);
+    if (usage.requestCount >= limit) {
+      return { limitReached: true, response: 'You have used all ' + limit + ' of your Genie requests this month. You can buy more to continue.', used: usage.requestCount, limit: limit, remaining: 0 };
+    }
 
     if (!kimiClient) {
       return { response: 'Genie is not configured right now. Please try again later.' };
@@ -49,11 +75,53 @@ async function genieRoutes(app) {
       });
 
       const text = res.choices && res.choices[0] && res.choices[0].message ? res.choices[0].message.content : 'I could not find resources for that. Please rephrase.';
-      return { response: text };
+
+      // Increment usage
+      await prisma.genieUsage.update({ where: { id: usage.id }, data: { requestCount: { increment: 1 } } });
+      var newRemaining = Math.max(0, limit - usage.requestCount - 1);
+
+      return { response: text, used: usage.requestCount + 1, limit: limit, remaining: newRemaining };
     } catch (e) {
       console.log('[genie] error: ' + (e.message || e));
       return { response: 'I am unable to retrieve resources at the moment. Please try again shortly.' };
     }
+  });
+
+  // Buy Genie credits (one-time purchase)
+  app.post('/buy-credits', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var pack = request.body.pack;
+    var PACKS = {
+      genie10: { requests: 10, priceKey: 'RESOURCES_INCREASE_10' },
+      genie20: { requests: 20, priceKey: 'RESOURCES_INCREASE_20' },
+    };
+    var selected = PACKS[pack];
+    if (!selected) return reply.code(400).send({ error: 'Invalid pack' });
+    var now = new Date();
+    var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    if (!process.env.STRIPE_SECRET_KEY) {
+      // Demo mode: instantly add
+      var usage = await getGenieUsage(request.user.id);
+      await prisma.genieUsage.update({ where: { id: usage.id }, data: { bonusRequests: { increment: selected.requests } } });
+      return { status: 'added', requests: selected.requests, demo: true };
+    }
+
+    var priceId = process.env[selected.priceKey];
+    if (!priceId) return reply.code(400).send({ error: 'Price not configured for ' + pack });
+
+    var stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    var user = await prisma.user.findUnique({ where: { id: request.user.id }, select: { email: true, stripeCustomerId: true } });
+    var session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: user.stripeCustomerId ? undefined : user.email,
+      customer: user.stripeCustomerId || undefined,
+      success_url: 'https://api.riff-app.co.uk/api/subscriptions/payment-success',
+      cancel_url: 'riff://bot-connection/resources',
+      metadata: { userId: request.user.id, type: 'genie_credits', requests: String(selected.requests) },
+    });
+    return { checkoutUrl: session.url, sessionId: session.id };
   });
 }
 
