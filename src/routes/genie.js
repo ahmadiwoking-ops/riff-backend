@@ -52,7 +52,7 @@ async function genieRoutes(app) {
       return { response: text };
     } catch (e) {
       console.log('[genie] error: ' + (e.message || e));
-      return { response: 'I am unable to retrieve resources at the moment. Please try again shortly.' };
+      return { response: 'DEBUG ERROR: ' + (e.message || String(e)) };
     }
   });
 }
