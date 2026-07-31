@@ -44,7 +44,7 @@ async function genieRoutes(app) {
       const res = await kimiClient.chat.completions.create({
         model: KIMI_MODEL,
         max_tokens: 2048,
-        temperature: 0.6,
+        temperature: 1,
         messages: [{ role: 'system', content: GENIE_SYSTEM }, ...msgs],
       });
 
@@ -52,7 +52,7 @@ async function genieRoutes(app) {
       return { response: text };
     } catch (e) {
       console.log('[genie] error: ' + (e.message || e));
-      return { response: 'DEBUG ERROR: ' + (e.message || String(e)) };
+      return { response: 'I am unable to retrieve resources at the moment. Please try again shortly.' };
     }
   });
 }
