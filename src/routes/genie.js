@@ -41,7 +41,7 @@ async function getGenieUsage(userId) {
 async function checkLink(url) {
   try {
     var controller = new AbortController();
-    var timer = setTimeout(function() { controller.abort(); }, 3000);
+    var timer = setTimeout(function() { controller.abort(); }, 2000);
     var res = await fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' } });
     clearTimeout(timer);
     // Only treat definite "page gone" statuses as dead. 403/401/429/5xx often mean bot-blocking or transient - keep them.
@@ -67,8 +67,11 @@ async function validateResourceLinks(text) {
     }
   });
   if (checks.length === 0) return { text: text, removed: 0 };
-  // Check all in parallel
-  var results = await Promise.all(checks.map(function(c) { return checkLink(c.url); }));
+  // Check all in parallel, but cap total time at 4s - if exceeded, keep all links
+  var allChecks = Promise.all(checks.map(function(c) { return checkLink(c.url); }));
+  var capTimeout = new Promise(function(resolve) { setTimeout(function() { resolve(null); }, 4000); });
+  var results = await Promise.race([allChecks, capTimeout]);
+  if (!results) return { text: text, removed: 0 }; // timed out - keep everything
   var deadIndexes = {};
   var removed = 0;
   checks.forEach(function(c, i) {
