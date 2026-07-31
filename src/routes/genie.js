@@ -41,12 +41,15 @@ async function getGenieUsage(userId) {
 async function checkLink(url) {
   try {
     var controller = new AbortController();
-    var timer = setTimeout(function() { controller.abort(); }, 5000);
-    var res = await fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RiffGenie/1.0)' } });
+    var timer = setTimeout(function() { controller.abort(); }, 3000);
+    var res = await fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' } });
     clearTimeout(timer);
-    return res.status >= 200 && res.status < 400;
+    // Only treat definite "page gone" statuses as dead. 403/401/429/5xx often mean bot-blocking or transient - keep them.
+    if (res.status === 404 || res.status === 410) return false;
+    return true;
   } catch (e) {
-    return false;
+    // Timeout or network error - assume the site is up but slow/blocking. Keep it.
+    return true;
   }
 }
 
@@ -117,27 +120,17 @@ async function genieRoutes(app) {
 
       var text = res.choices && res.choices[0] && res.choices[0].message ? res.choices[0].message.content : 'I could not find resources for that. Please rephrase.';
 
-      // Validate links - remove any dead/404 pages
-      var validated = await validateResourceLinks(text);
-      text = validated.text;
-
-      // If links were removed, ask Genie once for verified alternatives
-      if (validated.removed > 0) {
-        try {
-          var retryMsgs = [
-            { role: 'system', content: GENIE_SYSTEM },
-            { role: 'user', content: String(message) },
-            { role: 'assistant', content: text },
-            { role: 'user', content: 'Some links were unavailable and removed. Please provide ' + validated.removed + ' additional verified resource(s) for the same request, using only well-known homepage or main-section URLs that are very unlikely to be broken (e.g. https://www.gov.uk, https://www.nhs.uk). List only the new resources in the same bullet format.' },
-          ];
-          var retry = await kimiClient.chat.completions.create({ model: KIMI_MODEL, max_tokens: 1024, temperature: 1, messages: retryMsgs });
-          var extra = retry.choices && retry.choices[0] && retry.choices[0].message ? retry.choices[0].message.content : '';
-          if (extra) {
-            var extraValidated = await validateResourceLinks(extra);
-            if (extraValidated.text.trim()) text = text + '\n' + extraValidated.text;
-          }
-        } catch (e) {}
-      }
+      // Validate links - remove only definite dead/404 pages
+      var originalText = text;
+      try {
+        var validated = await validateResourceLinks(text);
+        // If validation left almost nothing but the original had content, keep the original
+        if (validated.text.trim().length < 20 && originalText.trim().length > 20) {
+          text = originalText;
+        } else {
+          text = validated.text;
+        }
+      } catch (e) { text = originalText; }
 
       // Increment usage
       await prisma.genieUsage.update({ where: { id: usage.id }, data: { requestCount: { increment: 1 } } });
