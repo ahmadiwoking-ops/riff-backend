@@ -3,8 +3,8 @@ const OpenAI = require('openai');
 
 const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 let kimiClient = null;
-if (process.env.KIMI_API_KEY) {
-  kimiClient = new OpenAI({ apiKey: process.env.KIMI_API_KEY, baseURL: 'https://api.moonshot.ai/v1' });
+if (process.env.MOONSHOT_API_KEY) {
+  kimiClient = new OpenAI({ apiKey: process.env.MOONSHOT_API_KEY, baseURL: 'https://api.moonshot.ai/v1' });
 }
 
 const GENIE_SYSTEM = [
