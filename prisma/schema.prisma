@@ -372,3 +372,12 @@ model GenieUsage {
   updatedAt    DateTime @updatedAt
   @@unique([userId, monthStart])
 }
+
+model GenieMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  role      String
+  text      String
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+}

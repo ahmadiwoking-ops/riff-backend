@@ -135,6 +135,12 @@ async function genieRoutes(app) {
         }
       } catch (e) { text = originalText; }
 
+      // Save to history (request + response)
+      try {
+        await prisma.genieMessage.create({ data: { userId: request.user.id, role: 'user', text: String(message) } });
+        await prisma.genieMessage.create({ data: { userId: request.user.id, role: 'genie', text: text } });
+      } catch (histErr) {}
+
       // Increment usage
       await prisma.genieUsage.update({ where: { id: usage.id }, data: { requestCount: { increment: 1 } } });
       var newRemaining = Math.max(0, limit - usage.requestCount - 1);
@@ -182,6 +188,32 @@ async function genieRoutes(app) {
     });
     return { checkoutUrl: session.url, sessionId: session.id };
   });
+
+  // Get Genie conversation history
+  app.get('/history', { preHandler: [app.authenticate] }, async (request) => {
+    var msgs = await prisma.genieMessage.findMany({
+      where: { userId: request.user.id },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+    });
+    return { messages: msgs.map(function(m) { return { id: m.id, role: m.role, text: m.text, createdAt: m.createdAt }; }) };
+  });
+
+  // Search Genie history by keyword
+  app.get('/search', { preHandler: [app.authenticate] }, async (request) => {
+    var q = (request.query.q || '').trim();
+    if (!q) return { results: [] };
+    var msgs = await prisma.genieMessage.findMany({
+      where: {
+        userId: request.user.id,
+        text: { contains: q, mode: 'insensitive' },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return { results: msgs.map(function(m) { return { id: m.id, role: m.role, text: m.text, createdAt: m.createdAt }; }) };
+  });
+
 }
 
 module.exports = genieRoutes;
