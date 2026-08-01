@@ -125,6 +125,9 @@ model Connection {
   fadeMode         String?
   fadeInitiatedBy  String?
   botGoodbyeStep   Int      @default(0)
+  stageBeforeEnd   String?
+  userAReconnect   Boolean  @default(false)
+  userBReconnect   Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   userA            User     @relation("userA", fields: [userAId], references: [id])

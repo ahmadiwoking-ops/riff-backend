@@ -199,13 +199,13 @@ async function connectionRoutes(app) {
 
     if (mode === 'self') {
       var gfield = request.user.id === conn.userAId ? 'userAGoodbye' : 'userBGoodbye';
-      await prisma.connection.update({ where: { id: conn.id }, data: { [gfield]: goodbyeText || 'Thank you for the connection. Wishing you all the best.', fadeMode: 'self', fadeInitiatedBy: request.user.id, isActive: false, stage: 'ended', endedAt: new Date(), endReason: 'self_goodbye' } });
+      await prisma.connection.update({ where: { id: conn.id }, data: { [gfield]: goodbyeText || 'Thank you for the connection. Wishing you all the best.', fadeMode: 'self', fadeInitiatedBy: request.user.id, isActive: false, stageBeforeEnd: (conn.stage === 'fading' || conn.stage === 'ended') ? (conn.stageBeforeEnd || 'connected') : conn.stage, stage: 'ended', endedAt: new Date(), endReason: 'self_goodbye', userAReconnect: false, userBReconnect: false } });
       return { status: 'ended', message: 'Your goodbye has been shared. This connection is now closed.' };
     }
 
     if (mode === 'bot') {
       // Bot takes over: mark fading, step 0. Gradual messages sent via bot-goodbye-step.
-      await prisma.connection.update({ where: { id: conn.id }, data: { fadeMode: 'bot', fadeInitiatedBy: request.user.id, stage: 'fading', botGoodbyeStep: 0 } });
+      await prisma.connection.update({ where: { id: conn.id }, data: { fadeMode: 'bot', fadeInitiatedBy: request.user.id, stageBeforeEnd: conn.stage, stage: 'fading', botGoodbyeStep: 0, userAReconnect: false, userBReconnect: false } });
       return { status: 'fading', message: 'A gentle wind-down has begun. The connection will ease to a close over the next little while.' };
     }
 
@@ -236,6 +236,28 @@ async function connectionRoutes(app) {
     var done = nextStep >= BOT_MESSAGES.length;
     await prisma.connection.update({ where: { id: conn.id }, data: { botGoodbyeStep: nextStep, ...(done ? { isActive: false, stage: 'ended', endedAt: new Date(), endReason: 'bot_goodbye' } : {}) } });
     return { status: done ? 'ended' : 'fading', message: text, step: nextStep, done: done };
+  });
+
+  // ═══ Connect back (mutual) — recover an ended connection ═══
+  app.post('/:id/reconnect', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Not found' });
+    if (conn.stage !== 'ended') return { status: 'active', message: 'This connection is still active.' };
+    var field = request.user.id === conn.userAId ? 'userAReconnect' : 'userBReconnect';
+    var updated = await prisma.connection.update({ where: { id: conn.id }, data: { [field]: true } });
+    var both = updated.userAReconnect && updated.userBReconnect;
+    if (both) {
+      var restoreStage = updated.stageBeforeEnd || 'connected';
+      await prisma.connection.update({ where: { id: conn.id }, data: {
+        stage: restoreStage, isActive: true,
+        endedAt: null, endReason: null, fadeMode: null, fadeInitiatedBy: null,
+        botGoodbyeStep: 0, userAReconnect: false, userBReconnect: false,
+        userAGoodbye: null, userBGoodbye: null,
+      } });
+      return { status: 'reconnected', stage: restoreStage, message: 'You are connected again! Picking up where you left off.' };
+    }
+    var otherName = 'the other person';
+    return { status: 'waiting', message: 'Waiting for ' + otherName + ' to connect back too.', bothReady: false };
   });
 }
 module.exports = connectionRoutes;
