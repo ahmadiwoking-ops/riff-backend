@@ -141,5 +141,102 @@ async function connectionRoutes(app) {
     const isUserA = conn.userAId === request.user.id;
     return { myGoodbye: isUserA ? conn.userAGoodbye : conn.userBGoodbye, theirGoodbye: isUserA ? conn.userBGoodbye : conn.userAGoodbye, endReason: conn.endReason };
   });
+
+  // ═══ NEW FLOW: mark ready to reveal ═══
+  app.post('/:id/ready-reveal', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Not found' });
+    var field = request.user.id === conn.userAId ? 'userAReadyReveal' : 'userBReadyReveal';
+    var updated = await prisma.connection.update({ where: { id: conn.id }, data: { [field]: true } });
+    var both = updated.userAReadyReveal && updated.userBReadyReveal;
+    if (both && updated.stage === 'open') {
+      await prisma.connection.update({ where: { id: conn.id }, data: { stage: 'reveal' } });
+    }
+    return { status: 'ready', bothReady: both, message: both ? 'Both ready — take your selfies!' : 'Waiting for them to be ready to reveal' };
+  });
+
+  // ═══ NEW FLOW: mark ready to open video ═══
+  app.post('/:id/ready-video', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Not found' });
+    if (!conn.userAPhoto || !conn.userBPhoto) return { status: 'waiting', bothReady: false, message: 'Both need to share a selfie first' };
+    var field = request.user.id === conn.userAId ? 'userAReadyVideo' : 'userBReadyVideo';
+    var updated = await prisma.connection.update({ where: { id: conn.id }, data: { [field]: true } });
+    var both = updated.userAReadyVideo && updated.userBReadyVideo;
+    if (both && updated.stage === 'reveal') {
+      await prisma.connection.update({ where: { id: conn.id }, data: { stage: 'connected' } });
+    }
+    return { status: 'ready', bothReady: both, message: both ? 'Video unlocked — full connection!' : 'Waiting for them to open video' };
+  });
+
+  // ═══ NEW FLOW: change / retake profile photo ═══
+  app.post('/:id/change-photo', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var photo = request.body.photo;
+    if (!photo) return reply.code(400).send({ error: 'photo required' });
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Not found' });
+    var field = request.user.id === conn.userAId ? 'userAPhoto' : 'userBPhoto';
+    await prisma.connection.update({ where: { id: conn.id }, data: { [field]: photo } });
+    return { status: 'updated', message: 'Your photo has been updated.' };
+  });
+
+  // ═══ NEW FLOW: mark first video started (gates the fade option) ═══
+  app.post('/:id/video-started', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Not found' });
+    var data = { videoStartedAt: conn.videoStartedAt || new Date() };
+    if (!conn.firstVideoAt) data.firstVideoAt = new Date();
+    await prisma.connection.update({ where: { id: conn.id }, data: data });
+    return { status: 'started', firstVideo: !conn.firstVideoAt };
+  });
+
+  // ═══ NEW FLOW: fade the connection (self goodbye or bot-assisted) ═══
+  app.post('/:id/fade', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var mode = request.body.mode; // 'self' or 'bot'
+    var goodbyeText = request.body.goodbye;
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Not found' });
+    if (!conn.firstVideoAt) return reply.code(400).send({ error: 'The fade option unlocks after your first video call.' });
+
+    if (mode === 'self') {
+      var gfield = request.user.id === conn.userAId ? 'userAGoodbye' : 'userBGoodbye';
+      await prisma.connection.update({ where: { id: conn.id }, data: { [gfield]: goodbyeText || 'Thank you for the connection. Wishing you all the best.', fadeMode: 'self', fadeInitiatedBy: request.user.id, isActive: false, stage: 'ended', endedAt: new Date(), endReason: 'self_goodbye' } });
+      return { status: 'ended', message: 'Your goodbye has been shared. This connection is now closed.' };
+    }
+
+    if (mode === 'bot') {
+      // Bot takes over: mark fading, step 0. Gradual messages sent via bot-goodbye-step.
+      await prisma.connection.update({ where: { id: conn.id }, data: { fadeMode: 'bot', fadeInitiatedBy: request.user.id, stage: 'fading', botGoodbyeStep: 0 } });
+      return { status: 'fading', message: 'A gentle wind-down has begun. The connection will ease to a close over the next little while.' };
+    }
+
+    return reply.code(400).send({ error: 'Invalid fade mode' });
+  });
+
+  // ═══ NEW FLOW: advance the bot's gradual goodbye (called over time) ═══
+  app.post('/:id/bot-goodbye-step', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Not found' });
+    if (conn.fadeMode !== 'bot' || conn.stage !== 'fading') return { status: conn.stage, done: conn.stage === 'ended' };
+
+    var BOT_MESSAGES = [
+      "hey — just wanted to say how much i've enjoyed getting to know you here. 💛",
+      "life takes us in different directions sometimes, and that's okay. i think this connection has run its lovely course.",
+      "no hard feelings at all — only gratitude for the conversations we shared.",
+      "i'll let this be my goodbye. take care of yourself, and all the best on your journey. 🌿",
+    ];
+    var step = conn.botGoodbyeStep || 0;
+    if (step >= BOT_MESSAGES.length) {
+      await prisma.connection.update({ where: { id: conn.id }, data: { isActive: false, stage: 'ended', endedAt: new Date(), endReason: 'bot_goodbye' } });
+      return { status: 'ended', done: true };
+    }
+    var text = BOT_MESSAGES[step];
+    // Save as a system/bot message in the conversation
+    await prisma.message.create({ data: { connectionId: conn.id, senderId: conn.fadeInitiatedBy || conn.userAId, content: text, type: 'bot_goodbye' } });
+    var nextStep = step + 1;
+    var done = nextStep >= BOT_MESSAGES.length;
+    await prisma.connection.update({ where: { id: conn.id }, data: { botGoodbyeStep: nextStep, ...(done ? { isActive: false, stage: 'ended', endedAt: new Date(), endReason: 'bot_goodbye' } : {}) } });
+    return { status: done ? 'ended' : 'fading', message: text, step: nextStep, done: done };
+  });
 }
 module.exports = connectionRoutes;

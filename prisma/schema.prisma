@@ -95,7 +95,7 @@ model Connection {
   userAId          String
   userBId          String
   compatScore      Float
-  stage            String   @default("questioning")
+  stage            String   @default("open")
   isActive         Boolean  @default(true)
   isPractice       Boolean  @default(false)
   userAVoiceAvg    Float?
@@ -117,6 +117,14 @@ model Connection {
   userBGoodbye     String?
   endedAt          DateTime?
   endReason        String?
+  userAReadyReveal Boolean  @default(false)
+  userBReadyReveal Boolean  @default(false)
+  userAReadyVideo  Boolean  @default(false)
+  userBReadyVideo  Boolean  @default(false)
+  firstVideoAt     DateTime?
+  fadeMode         String?
+  fadeInitiatedBy  String?
+  botGoodbyeStep   Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   userA            User     @relation("userA", fields: [userAId], references: [id])
