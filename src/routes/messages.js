@@ -39,22 +39,39 @@ async function messageRoutes(app) {
     }
 
     if (limits.deepConnections !== -1) {
-      var activeCount = await prisma.connection.count({
-        where: { OR: [{ userAId: myId }, { userBId: myId }], isActive: true },
-      });
-      if (activeCount >= limits.deepConnections) {
-        return {
-          error: 'You have reached your deep connection limit (' + limits.deepConnections + ' on ' + plan + ' plan). Upgrade to get more connections.',
-          code: 'PLAN_LIMIT',
-          current: activeCount,
-          limit: limits.deepConnections,
-          plan: plan,
-        };
+      if (plan === 'free') {
+        // FREE = one deep connection EVER (lifetime). Count active + ended (any non-practice connection).
+        var everCount = await prisma.connection.count({
+          where: { OR: [{ userAId: myId }, { userBId: myId }], isPractice: false },
+        });
+        if (everCount >= 1) {
+          return {
+            error: 'Free accounts include one deep connection. Subscribe to a paid plan to connect with more people.',
+            code: 'FREE_LIFETIME_LIMIT',
+            current: everCount,
+            limit: 1,
+            plan: plan,
+          };
+        }
+      } else {
+        // Paid tiers: limit is per active connection (at a time)
+        var activeCount = await prisma.connection.count({
+          where: { OR: [{ userAId: myId }, { userBId: myId }], isActive: true },
+        });
+        if (activeCount >= limits.deepConnections) {
+          return {
+            error: 'You have reached your deep connection limit (' + limits.deepConnections + ' on ' + plan + ' plan). Upgrade to get more connections.',
+            code: 'PLAN_LIMIT',
+            current: activeCount,
+            limit: limits.deepConnections,
+            plan: plan,
+          };
+        }
       }
     }
 
     // Create new connection
-    var conn = await prisma.connection.create({ data: { userAId: ids[0], userBId: ids[1], compatScore: score, stage: 'questioning' } });
+    var conn = await prisma.connection.create({ data: { userAId: ids[0], userBId: ids[1], compatScore: score, stage: 'open' } });
     return { connection: conn };
   });
 }

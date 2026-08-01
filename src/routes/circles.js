@@ -35,15 +35,29 @@ async function circleRoutes(app) {
     }
 
     if (limits.circles !== -1) {
-      var activeCircles = await prisma.circleMember.count({ where: { userId: myId, isActive: true } });
-      if (activeCircles >= limits.circles) {
-        return {
-          error: 'You have reached your friend circle limit (' + limits.circles + ' on ' + plan + ' plan). Upgrade to join more circles.',
-          code: 'PLAN_LIMIT',
-          current: activeCircles,
-          limit: limits.circles,
-          plan: plan,
-        };
+      if (plan === 'free') {
+        // FREE = one friend circle EVER (lifetime). Count every membership regardless of status.
+        var everCircles = await prisma.circleMember.count({ where: { userId: myId } });
+        if (everCircles >= 1) {
+          return {
+            error: 'Free accounts include one friend circle. Subscribe to a paid plan to join more circles.',
+            code: 'FREE_LIFETIME_LIMIT',
+            current: everCircles,
+            limit: 1,
+            plan: plan,
+          };
+        }
+      } else {
+        var activeCircles = await prisma.circleMember.count({ where: { userId: myId, isActive: true } });
+        if (activeCircles >= limits.circles) {
+          return {
+            error: 'You have reached your friend circle limit (' + limits.circles + ' on ' + plan + ' plan). Upgrade to join more circles.',
+            code: 'PLAN_LIMIT',
+            current: activeCircles,
+            limit: limits.circles,
+            plan: plan,
+          };
+        }
       }
     }
 
