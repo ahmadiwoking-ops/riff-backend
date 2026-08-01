@@ -196,7 +196,6 @@ async function connectionRoutes(app) {
     var goodbyeText = request.body.goodbye;
     var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
     if (!conn) return reply.code(404).send({ error: 'Not found' });
-    if (!conn.firstVideoAt) return reply.code(400).send({ error: 'The fade option unlocks after your first video call.' });
 
     if (mode === 'self') {
       var gfield = request.user.id === conn.userAId ? 'userAGoodbye' : 'userBGoodbye';
