@@ -175,13 +175,14 @@ async function botConnectionRoutes(app) {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     let usage = await prisma.botConnectionUsage.findFirst({ where: { userId: request.user.id, monthStart: monthStart } });
     if (!usage) { usage = await prisma.botConnectionUsage.create({ data: { userId: request.user.id, monthStart: monthStart, messageCount: 0, bonusMessages: 0 } }); }
-    if (usage.messageCount >= DEMO_LIMIT) { return reply.code(429).send({ error: 'You have used all 150 free messages this month. Subscribe to continue chatting.', remaining: 0, limit: DEMO_LIMIT, used: usage.messageCount }); }
+    var demoEffective = DEMO_LIMIT + (usage.bonusMessages || 0);
+    if (usage.messageCount >= demoEffective) { return reply.code(429).send({ error: 'You have used all your free messages this month. Subscribe or buy more to continue.', remaining: 0, limit: demoEffective, used: usage.messageCount, code: 'LIMIT_REACHED' }); }
     const personaRecord = persona ? await prisma.botPersona.findFirst({ where: { alias: persona } }) : await prisma.botPersona.findFirst({ where: { alias: 'Luna' } });
     const response = await generateKimiResponse(personaRecord || { alias: persona || 'Luna' }, message, conversationHistory || [], (mode || 'chat'), null);
     let audio = null;
     if (response.text) { audio = await generateAudioResponse(response.text, personaRecord?.alias || 'Luna'); }
     await prisma.botConnectionUsage.update({ where: { id: usage.id }, data: { messageCount: usage.messageCount + 1 } });
-    return { response: response.text, source: response.source, persona: personaRecord?.alias || 'Luna', audio: audio || null, isDemo: true, usage: { used: usage.messageCount + 1, limit: DEMO_LIMIT, remaining: Math.max(0, DEMO_LIMIT - usage.messageCount - 1) } };
+    return { response: response.text, source: response.source, persona: personaRecord?.alias || 'Luna', audio: audio || null, isDemo: true, usage: { used: usage.messageCount + 1, limit: demoEffective, remaining: Math.max(0, demoEffective - usage.messageCount - 1) } };
   });
 
   // ═══ Get available personas ═══
