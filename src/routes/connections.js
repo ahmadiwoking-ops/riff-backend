@@ -7,7 +7,7 @@ async function connectionRoutes(app) {
     const userId = request.user.id;
     var all = await prisma.connection.findMany({
       where: { OR: [{ userAId: userId }, { userBId: userId }] },
-      include: { userA: { select: { id: true, alias: true, trustScore: true } }, userB: { select: { id: true, alias: true, trustScore: true } } },
+      include: { userA: { select: { id: true, alias: true, trustScore: true, idVerified: true } }, userB: { select: { id: true, alias: true, trustScore: true, idVerified: true } } },
       orderBy: { updatedAt: 'desc' },
     });
     // Split into active and ended (ended = recoverable via Connect back)
@@ -28,7 +28,7 @@ async function connectionRoutes(app) {
   });
 
   app.get('/:id', { preHandler: [app.authenticate] }, async (request) => {
-    const conn = await prisma.connection.findUnique({ where: { id: request.params.id }, include: { userA: { select: { id: true, alias: true, trustScore: true } }, userB: { select: { id: true, alias: true, trustScore: true } } } });
+    const conn = await prisma.connection.findUnique({ where: { id: request.params.id }, include: { userA: { select: { id: true, alias: true, trustScore: true, idVerified: true } }, userB: { select: { id: true, alias: true, trustScore: true, idVerified: true } } } });
     if (!conn) return { error: 'Not found' };
     const stageCheck = await checkStageGate(conn.id, request.user.id, conn.stage);
     return { connection: conn, stageProgress: stageCheck };
