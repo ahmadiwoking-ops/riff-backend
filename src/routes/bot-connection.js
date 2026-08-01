@@ -31,7 +31,7 @@ async function botConnectionRoutes(app) {
 
     const usage = await checkUsage(request.user.id);
     const isPaidStatus = (user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date())) || (['bot_connection','explorer','inner_circle'].includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date()));
-    const limit = (isPaidStatus ? 500 : 150) + (usage.bonusMessages || 0);
+    const limit = (isPaidStatus ? 500 : 50) + (usage.bonusMessages || 0);
     const remaining = Math.max(0, limit - usage.messageCount);
 
     return {
@@ -168,7 +168,7 @@ async function botConnectionRoutes(app) {
 
   // ═══ Demo chat (free users, 10 messages tracked server-side) ═══
   app.post('/demo', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const DEMO_LIMIT = 150;
+    const DEMO_LIMIT = 50;
     const { message, conversationHistory, persona, mode } = request.body;
     if (!message) return reply.code(400).send({ error: 'Message required' });
     const now = new Date();
