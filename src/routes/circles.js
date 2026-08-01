@@ -51,7 +51,7 @@ async function circleRoutes(app) {
         var activeCircles = await prisma.circleMember.count({ where: { userId: myId, isActive: true } });
         if (activeCircles >= limits.circles) {
           return {
-            error: 'You have reached your friend circle limit (' + limits.circles + ' on ' + plan + ' plan). Upgrade to join more circles.',
+            error: plan === 'inner_circle' ? 'You have reached your limit of 5 active circles. Leave one to join a new circle.' : 'You have reached your friend circle limit (' + limits.circles + ' on ' + plan + ' plan). Upgrade to join more circles.',
             code: 'PLAN_LIMIT',
             current: activeCircles,
             limit: limits.circles,

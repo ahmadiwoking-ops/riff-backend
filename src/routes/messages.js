@@ -60,7 +60,7 @@ async function messageRoutes(app) {
         });
         if (activeCount >= limits.deepConnections) {
           return {
-            error: 'You have reached your deep connection limit (' + limits.deepConnections + ' on ' + plan + ' plan). Upgrade to get more connections.',
+            error: plan === 'inner_circle' ? 'You have reached your limit of 5 active connections. End one to start a new connection.' : 'You have reached your deep connection limit (' + limits.deepConnections + ' on ' + plan + ' plan). Upgrade to get more connections.',
             code: 'PLAN_LIMIT',
             current: activeCount,
             limit: limits.deepConnections,
