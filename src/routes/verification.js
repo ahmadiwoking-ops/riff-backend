@@ -83,22 +83,20 @@ module.exports = async function (fastify, opts) {
     if (!userId) return;
 
     try {
+      var sessionBody = JSON.stringify({
+        verification: {
+          vendorData: String(userId),
+          callback: process.env.VERIFF_CALLBACK_URL || undefined,
+        },
+      });
       const res = await fetch(`${VERIFF_BASE_URL}/sessions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-AUTH-CLIENT': VERIFF_API_KEY,
+          'X-HMAC-SIGNATURE': veriffSignature(sessionBody),
         },
-        body: JSON.stringify({
-          verification: {
-            // vendorData lets the decision webhook map results back to this user.
-            vendorData: String(userId),
-            // Where Veriff redirects the end-user once they finish in the browser.
-            // For Expo Go set VERIFF_CALLBACK_URL to a deep link or a simple
-            // "you can return to the app now" web page. Optional.
-            callback: process.env.VERIFF_CALLBACK_URL || undefined,
-          },
-        }),
+        body: sessionBody,
       });
 
       const data = await res.json();
