@@ -1,6 +1,7 @@
 const prisma = require('../db');
 const bcrypt = require('bcryptjs');
 const { checkStageGate, advanceStage } = require('../services/stages');
+const { getLimits } = require('../services/plan-limits');
 
 async function connectionRoutes(app) {
   app.get('/', { preHandler: [app.authenticate] }, async (request) => {
@@ -262,6 +263,17 @@ async function connectionRoutes(app) {
     var updated = await prisma.connection.update({ where: { id: conn.id }, data: { [field]: true } });
     var both = updated.userAReconnect && updated.userBReconnect;
     if (both) {
+      // reconnect cap check: don't exceed the plan's active-connection limit
+      var reUser = await prisma.user.findUnique({ where: { id: request.user.id }, select: { plan: true, planExpiresAt: true } });
+      var rePlan = reUser.plan || 'free';
+      if (reUser.planExpiresAt && reUser.planExpiresAt < new Date()) rePlan = 'free';
+      var reLimits = getLimits(rePlan);
+      if (reLimits.deepConnections !== -1) {
+        var reActive = await prisma.connection.count({ where: { OR: [{ userAId: request.user.id }, { userBId: request.user.id }], isActive: true } });
+        if (reActive >= reLimits.deepConnections) {
+          return { status: 'at_limit', message: 'You have reached your active connection limit. End another connection before reconnecting this one.' };
+        }
+      }
       var restoreStage = updated.stageBeforeEnd || 'connected';
       await prisma.connection.update({ where: { id: conn.id }, data: {
         stage: restoreStage, isActive: true,

@@ -1,7 +1,7 @@
 var PLAN_LIMITS = {
   free:           { deepConnections: 1, circles: 1 },
   explorer:       { deepConnections: 2, circles: 3 },
-  inner_circle:   { deepConnections: -1, circles: -1 },
+  inner_circle:   { deepConnections: 5, circles: 5 },
   bot_connection: { deepConnections: 0, circles: 0 },
 };
 
