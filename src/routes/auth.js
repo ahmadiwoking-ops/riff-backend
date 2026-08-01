@@ -22,7 +22,7 @@ async function authRoutes(app) {
       try { const geo = await fetch("http://ip-api.com/json/" + regIp + "?fields=country,city"); const loc = await geo.json(); if (loc.country) registrationLocation = (loc.city ? loc.city + ", " : "") + loc.country; } catch {}
       const user = await prisma.user.create({
         data: { email: data.email, alias: data.alias, age: data.age, gender: data.gender, seekingGender: data.seekingGender, connectionType: data.connectionType, passwordHash, registrationIp: regIp, registrationLocation },
-        select: { id: true, alias: true, email: true, plan: true, trustScore: true },
+        select: { id: true, alias: true, email: true, plan: true, trustScore: true, idVerified: true },
       });
       const token = app.jwt.sign({ id: user.id, alias: user.alias, role: 'user' });
       return reply.status(201).send({ user, token });
@@ -44,7 +44,7 @@ async function authRoutes(app) {
       if (!valid) return reply.status(401).send({ error: 'Invalid email or password' });
       await prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } });
       const token = app.jwt.sign({ id: user.id, alias: user.alias, role: 'user' });
-      return { user: { id: user.id, alias: user.alias, email: user.email, plan: user.plan, trustScore: user.trustScore }, token };
+      return { user: { id: user.id, alias: user.alias, email: user.email, plan: user.plan, trustScore: user.trustScore, idVerified: user.idVerified }, token };
     } catch (err) { app.log.error(err); return reply.status(500).send({ error: 'Login failed' }); }
   });
 
