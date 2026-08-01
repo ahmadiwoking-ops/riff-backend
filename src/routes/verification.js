@@ -86,7 +86,7 @@ module.exports = async function (fastify, opts) {
       var sessionBody = JSON.stringify({
         verification: {
           vendorData: String(userId),
-          callback: process.env.VERIFF_CALLBACK_URL || undefined,
+          callback: (process.env.VERIFF_CALLBACK_URL && process.env.VERIFF_CALLBACK_URL.indexOf('https://') === 0) ? process.env.VERIFF_CALLBACK_URL : undefined,
         },
       });
       const res = await fetch(`${VERIFF_BASE_URL}/sessions`, {
