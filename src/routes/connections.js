@@ -5,11 +5,26 @@ const { checkStageGate, advanceStage } = require('../services/stages');
 async function connectionRoutes(app) {
   app.get('/', { preHandler: [app.authenticate] }, async (request) => {
     const userId = request.user.id;
-    return { connections: await prisma.connection.findMany({
-      where: { OR: [{ userAId: userId }, { userBId: userId }], isActive: true },
+    var all = await prisma.connection.findMany({
+      where: { OR: [{ userAId: userId }, { userBId: userId }] },
       include: { userA: { select: { id: true, alias: true, trustScore: true } }, userB: { select: { id: true, alias: true, trustScore: true } } },
       orderBy: { updatedAt: 'desc' },
-    }) };
+    });
+    // Split into active and ended (ended = recoverable via Connect back)
+    var active = all.filter(function(c) { return c.isActive; });
+    var ended = all.filter(function(c) { return !c.isActive && c.stage === 'ended'; }).map(function(c) {
+      var iAmA = c.userAId === userId;
+      return {
+        id: c.id,
+        other: iAmA ? c.userB : c.userA,
+        stageBeforeEnd: c.stageBeforeEnd,
+        endReason: c.endReason,
+        endedAt: c.endedAt,
+        myReconnect: iAmA ? c.userAReconnect : c.userBReconnect,
+        theirReconnect: iAmA ? c.userBReconnect : c.userAReconnect,
+      };
+    });
+    return { connections: active, ended: ended };
   });
 
   app.get('/:id', { preHandler: [app.authenticate] }, async (request) => {
