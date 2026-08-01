@@ -1,5 +1,6 @@
 const prisma = require('../db');
 const { generateKimiResponse, generateAudioResponse, GAME_DATA } = require('../services/kimi-bot');
+const { loadMemory, updateMemory } = require('../services/persona-memory');
 
 async function botConnectionRoutes(app) {
 
@@ -125,14 +126,23 @@ async function botConnectionRoutes(app) {
       : await prisma.botPersona.findFirst({ where: { alias: 'Luna' } });
     if (!personaRecord && persona) personaRecord = { alias: persona };
 
+    // Load persona memory and inject it as context at the start of history
+    var personaAlias = personaRecord && personaRecord.alias ? personaRecord.alias : (persona || 'Luna');
+    var memorySummary = await loadMemory(request.user.id, personaAlias);
+    var historyWithMemory = (conversationHistory || []).slice();
+    if (memorySummary) {
+      historyWithMemory.unshift({ role: 'assistant', content: '[Things I remember about you from our past conversations: ' + memorySummary + ']' });
+    }
     // Generate text response via Kimi
     const response = await generateKimiResponse(
       personaRecord,
       message,
-      conversationHistory || [],
+      historyWithMemory,
       mode || (mode || 'chat'),
       gameContext
     );
+    // Update memory in the background (non-blocking)
+    updateMemory(request.user.id, personaAlias, (conversationHistory || []).concat([{ role: 'user', content: message }, { role: 'assistant', content: response.text }])).catch(function() {});
 
     // Generate audio if requested
     let audio = null;

@@ -381,3 +381,14 @@ model GenieMessage {
   createdAt DateTime @default(now())
   @@index([userId, createdAt])
 }
+
+model PersonaMemory {
+  id           String   @id @default(cuid())
+  userId       String
+  persona      String
+  summary      String   @default("")
+  lastMsgCount Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  @@unique([userId, persona])
+}
