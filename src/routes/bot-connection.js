@@ -259,9 +259,10 @@ async function botConnectionRoutes(app) {
   app.get('/history/:persona', { preHandler: [app.authenticate] }, async (request) => {
     var messages = await prisma.message.findMany({
       where: { senderId: request.user.id, circleId: 'bot_' + request.params.persona },
-      orderBy: { createdAt: 'asc' }, take: 100,
+      orderBy: { createdAt: 'desc' }, take: 200,
       select: { id: true, type: true, content: true, createdAt: true },
     });
+    messages.reverse(); // desc fetch (newest 200) -> chronological order for display
     return { messages: messages.map(function(m) { return { id: m.id, role: m.type === 'bot_user' ? 'user' : 'bot', text: m.content, timestamp: m.createdAt.getTime() }; }) };
   });
 
