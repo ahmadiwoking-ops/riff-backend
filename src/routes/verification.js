@@ -78,9 +78,51 @@ module.exports = async function (fastify, opts) {
 
   //    Mobile calls this, then opens the returned `url` with Linking.openURL().
   // ───────────────────────────────────────────────────────────────────────────
+
+  // ─── VERIFICATION PAYMENT (£5.99 one-time for free accounts; free for paid plans) ───
+  fastify.post('/pay', async (request, reply) => {
+    const userId = requireUserId(request, reply);
+    if (!userId) return;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { plan: true, planExpiresAt: true, verificationPaid: true } });
+    var plan = user.plan || 'free';
+    if (user.planExpiresAt && user.planExpiresAt < new Date()) plan = 'free';
+    if (plan !== 'free') {
+      return reply.send({ status: 'included', paid: true, message: 'Verification is included with your subscription.' });
+    }
+    if (user.verificationPaid) {
+      return reply.send({ status: 'already_paid', paid: true, message: 'Verification already paid. You can proceed.' });
+    }
+    if (!process.env.STRIPE_SECRET_KEY || !process.env.VERIFICATION_FEE) {
+      await prisma.user.update({ where: { id: userId }, data: { verificationPaid: true } });
+      return reply.send({ status: 'paid_demo', paid: true, message: 'Verification unlocked (demo mode).' });
+    }
+    try {
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        line_items: [{ price: process.env.VERIFICATION_FEE, quantity: 1 }],
+        success_url: 'https://riff-app.co.uk/verification-paid?success=true',
+        cancel_url: 'https://riff-app.co.uk/verification-paid?canceled=true',
+        client_reference_id: String(userId),
+        metadata: { type: 'verification_fee', userId: String(userId) },
+      });
+      return reply.send({ status: 'checkout', url: session.url });
+    } catch (err) {
+      request.log.error(err, 'Verification payment checkout error');
+      return reply.code(500).send({ error: 'Could not start payment' });
+    }
+  });
+
   fastify.post('/create-session', async (request, reply) => {
     const userId = requireUserId(request, reply);
     if (!userId) return;
+    // Gate: free users must have paid the verification fee; paid plans are included
+    const gu = await prisma.user.findUnique({ where: { id: userId }, select: { plan: true, planExpiresAt: true, verificationPaid: true } });
+    var gplan = gu.plan || 'free';
+    if (gu.planExpiresAt && gu.planExpiresAt < new Date()) gplan = 'free';
+    if (gplan === 'free' && !gu.verificationPaid) {
+      return reply.code(402).send({ error: 'Verification payment required', code: 'PAYMENT_REQUIRED' }); // verification not paid
+    }
 
     try {
       var sessionBody = JSON.stringify({

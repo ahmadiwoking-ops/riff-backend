@@ -152,6 +152,11 @@ setTimeout(goBack, 2000);
         return { received: true };
       }
       // Handle Genie credit purchases
+      if (s.metadata && s.metadata.type === 'verification_fee') {
+        var vUserId = s.metadata.userId || s.client_reference_id;
+        if (vUserId) { try { await prisma.user.update({ where: { id: vUserId }, data: { verificationPaid: true } }); } catch (e) {} }
+        return { received: true };
+      }
       if (s.metadata && s.metadata.type === 'genie_credits') {
         const guid = s.metadata.userId;
         const reqs = parseInt(s.metadata.requests) || 0;
