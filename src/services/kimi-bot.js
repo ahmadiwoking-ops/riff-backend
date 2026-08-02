@@ -1,4 +1,53 @@
 const OpenAI = require('openai').default || require('openai');
+const https = require('https');
+// Grok TTS (xAI) — 5 expressive voices mapped across personas by gender/character
+const GROK_VOICES = {
+  Luna: 'eve', Amara: 'ara', Zara: 'eve', Naia: 'ara', Jade: 'sal', Priya: 'ara', Elena: 'eve', Leila: 'sal', Maya: 'ara', Aisha: 'sal', Yuki: 'sal', Dex: 'leo', River: 'sal',
+  Kai: 'rex', Marco: 'leo', Rio: 'rex', Theo: 'leo', Felix: 'rex', Oscar: 'leo', Sam: 'rex',
+};
+// Convert message text into Grok speech tags for expressive delivery (tags go in the SPOKEN text only)
+function grokTagText(text) {
+  var t = text || '';
+  var lower = t.toLowerCase();
+  // Laughter cues -> [laugh]
+  t = t.replace(/\b(lol|lmao|lmfao|haha+|hehe+|rofl)\b/gi, '[laugh]');
+  // Sighs
+  t = t.replace(/\*(sigh|sighs)\*/gi, '[sigh]');
+  // Ellipses -> pause
+  t = t.replace(/\.\.\.|…/g, ' [pause] ');
+  // Leading soft acknowledgements
+  if (/^(hmm|hmmm|well|oh)\b/i.test(t)) t = t.replace(/^(hmm+|well|oh)\b/i, '$1 [breath]');
+  return t;
+}
+async function generateGrokAudio(text, personaAlias) {
+  if (!process.env.XAI_API_KEY) return null;
+  var voice = GROK_VOICES[personaAlias] || 'ara';
+  var spoken = grokTagText(text);
+  var body = JSON.stringify({ text: spoken, voice_id: voice, language: 'en' });
+  return new Promise(function(resolve) {
+    var req = https.request('https://api.x.ai/v1/tts', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.XAI_API_KEY, 'Content-Type': 'application/json' },
+    }, function(res) {
+      var chunks = [];
+      res.on('data', function(c) { chunks.push(c); });
+      res.on('end', function() {
+        if (res.statusCode === 200) {
+          var buf = Buffer.concat(chunks);
+          console.log('[grok-tts] ok (voice=' + voice + ', chars=' + spoken.length + ')');
+          resolve({ audio: buf.toString('base64'), format: 'mp3', voice: voice, durationEstimate: Math.ceil(text.length / 15) });
+        } else {
+          console.error('[grok-tts] error ' + res.statusCode + ': ' + Buffer.concat(chunks).toString().slice(0, 200));
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', function(e) { console.error('[grok-tts] req error: ' + e.message); resolve(null); });
+    req.write(body);
+    req.end();
+  });
+}
+
 const { scanMessage } = require('./safety');
 
 // Kimi AI client (OpenAI-compatible API)
@@ -282,6 +331,11 @@ async function generateKimiResponse(persona, message, history, mode, gameContext
 }
 
 async function generateAudioResponse(text, personaAlias) {
+  // Primary: Grok TTS (expressive + cheaper). Falls through to OpenAI if it returns null.
+  try {
+    var grok = await generateGrokAudio(text, personaAlias);
+    if (grok) return grok;
+  } catch (e) { console.error('[kimi-bot] Grok TTS threw, falling back to OpenAI:', e.message); }
   if (!ttsClient) {
     console.warn('[kimi-bot] No OPENAI_API_KEY set - skipping TTS');
     return null;
