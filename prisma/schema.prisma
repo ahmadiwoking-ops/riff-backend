@@ -24,6 +24,7 @@ model User {
   idVerified      Boolean  @default(false)
   verificationPaid Boolean @default(false)
   selfieVerified  Boolean  @default(false)
+  verificationSelfie String?
   verifiedName    String?
   verifiedDOB     DateTime?
   verifiedCountry String?

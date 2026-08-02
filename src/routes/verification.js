@@ -213,11 +213,13 @@ module.exports = async function (fastify, opts) {
     const userId = requireUserId(request, reply);
     if (!userId) return;
 
-    const { passed } = request.body || {};
+    const { passed, selfie } = request.body || {};
     try {
+      var selfieData = { selfieVerified: !!passed };
+      if (selfie) selfieData.verificationSelfie = selfie;
       await prisma.user.update({
         where: { id: userId },
-        data: { selfieVerified: !!passed },
+        data: selfieData,
       });
     } catch (err) {
       request.log.error(err, 'selfie-result: failed to update user');
