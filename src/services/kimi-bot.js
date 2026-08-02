@@ -80,11 +80,13 @@ function buildDeliveryInstructions(text, personaAlias) {
   if (/\b(omg|wow|whoa|no way|oh my)\b/.test(lower)) cues.push('Convey genuine surprise and delight.');
   if (/\b(love|adore|amazing|wonderful|beautiful|gorgeous)\b/.test(lower)) cues.push('Let genuine warmth and affection colour the words.');
   if (/\b(hmm|hmmm|well|i guess)\b/.test(lower)) cues.push('Sound thoughtful and a little hesitant.');
-  // Labeled structure — accent stated first and most forcefully so the model prioritises it.
-  var instr = 'ACCENT (most important, apply strongly throughout): ' + accent + '\n';
-  instr += 'TONE: ' + style + '\n';
-  if (cues.length) instr += 'DELIVERY: ' + cues.join(' ') + '\n';
-  instr += 'Sound like a real person speaking naturally — never a narrator — but keep the accent above dominant at all times.';
+  // Natural-language, emotion-forward direction (spec-sheet phrasing made it robotic).
+  var instr = "You are leaving a warm, casual voice message for someone you're really into getting to know. ";
+  instr += accent + " ";
+  instr += style + " ";
+  instr += "Speak the way a real person actually talks in a voice note: relaxed and unscripted, with genuine feeling behind every line. Let real emotion live in your voice — light up when something excites you, soften when it's tender, smile when you're being playful. Vary your pace and pitch naturally, lean on the emotionally important words, take little breaths and natural pauses, and let a warm laugh or a soft 'mmm' slip out where it feels human. ";
+  if (cues.length) instr += cues.join(' ') + " ";
+  instr += "Never flat, never robotic, never like reading text aloud — this is you, talking to someone you like.";
   return instr;
 }
 
