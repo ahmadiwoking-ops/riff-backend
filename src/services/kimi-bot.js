@@ -287,11 +287,11 @@ async function generateAudioResponse(text, personaAlias) {
     const voice = PERSONA_VOICES[personaAlias] || 'nova';
 
     const mp3 = await ttsClient.audio.speech.create({
-      model: 'tts-1',
+      model: 'gpt-4o-mini-tts',
       voice,
       input: text,
+      instructions: buildDeliveryInstructions(text, personaAlias),
       response_format: 'mp3',
-      speed: 1.0,
     });
 
     // Convert to base64 for sending to mobile app
