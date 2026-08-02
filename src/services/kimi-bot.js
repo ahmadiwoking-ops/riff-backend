@@ -22,8 +22,8 @@ function grokTagText(text) {
 async function generateGrokAudio(text, personaAlias) {
   if (!process.env.XAI_API_KEY) return null;
   var voice = GROK_VOICES[personaAlias] || 'ara';
-  var spoken = grokTagText(text);
-  var body = JSON.stringify({ text: spoken, voice_id: voice, language: 'en' });
+  var spoken = text; // tags disabled: they trigger Grok's LLM to add words not in the text
+  var body = JSON.stringify({ text: spoken, voice_id: voice, language: 'en', text_normalization: false });
   return new Promise(function(resolve) {
     var req = https.request('https://api.x.ai/v1/tts', {
       method: 'POST',
