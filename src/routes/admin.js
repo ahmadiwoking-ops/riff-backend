@@ -32,7 +32,7 @@ async function adminRoutes(app) {
     return { users: await prisma.user.findMany({ where, select: {
       id: true, alias: true, email: true, gender: true, age: true, seekingGender: true, connectionType: true,
       country: true, language: true, phone: true, phoneVerified: true, emailVerified: true,
-      idVerified: true, selfieVerified: true, trustScore: true, trustFlags: true,
+      idVerified: true, selfieVerified: true, verificationSelfie: true, verificationPaid: true, trustScore: true, trustFlags: true,
       plan: true, planExpiresAt: true, isBanned: true, banReason: true,
       registrationIp: true, registrationLocation: true,
       isActive: true, lastActiveAt: true, createdAt: true, updatedAt: true,
