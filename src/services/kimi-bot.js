@@ -16,27 +16,27 @@ const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 
 // Each persona gets a distinct OpenAI TTS voice
 const PERSONA_VOICES = {
-  Luna: 'nova',       // warm, conversational
-  Kai: 'onyx',        // calm, grounded
-  Amara: 'shimmer',   // bright, energetic
-  Marco: 'echo',      // thoughtful, deep
-  Yuki: 'alloy',      // neutral, artistic
-  Zara: 'nova',       // intelligent, charismatic
-  Rio: 'onyx',        // direct, energetic
-  Naia: 'shimmer',    // calm, deep, conversational, philisophical
-  Jade: 'alloy',      // fun, sweet,energetic
-  Theo: 'echo',       // introvert, elegant, philisophical
-  Aisha: 'nova',      // direct, savy, intelligent, expert
-  Felix: 'onyx',      // fun, conversational, articulate
-  Maya: 'shimmer',    // conversational, legal, expert, direct
-  Oscar: 'echo',      // nostalgic, fun, funny, comedic
-  Leila: 'nova',      // funny, artistic, savy, humourous
-  Priya: 'coral',     // warm, articulate
-  Dex: 'fable',       // expressive, chaotic
-  Elena: 'sage',      // elegant, intense
-  Sam: 'ash',         // warm, protective
-  River: 'alloy',     // gentle, contemplative
-};
+  Luna: 'shimmer',    // F, Portugal
+  Kai: 'onyx',        // M, New Zealand
+  Amara: 'nova',      // F, Kenya
+  Marco: 'echo',      // M, Argentina
+  Yuki: 'fable',      // NB, Japan
+  Zara: 'shimmer',    // F, UK London
+  Rio: 'onyx',        // M, Brazil
+  Naia: 'nova',       // F, USA Portland
+  Jade: 'coral',      // F, South Korea
+  Theo: 'echo',       // M, UK Manchester
+  Aisha: 'sage',      // F, UAE Dubai
+  Felix: 'ash',       // M, Germany
+  Maya: 'nova',       // F, USA Chicago
+  Oscar: 'ballad',    // M, Mexico
+  Leila: 'coral',     // F, France
+  Priya: 'coral',     // F, India
+  Dex: 'alloy',       // NB, Canada
+  Elena: 'sage',      // F, Spain
+  Sam: 'ash',         // M, Nigeria
+  River: 'fable',     // NB, Sweden
+}
 
 // Per-persona base delivery style (steers gpt-4o-mini-tts for natural, in-character audio)
 const PERSONA_STYLE = {
@@ -64,7 +64,9 @@ const PERSONA_STYLE = {
 
 // Detect emotional cues in the text and build a delivery instruction so the voice emotes naturally.
 function buildDeliveryInstructions(text, personaAlias) {
-  var base = PERSONA_STYLE[personaAlias] || 'Natural, warm, and conversational.';
+  var ACCENTS = {"Luna":"Speak English with a gentle Portuguese accent.","Kai":"Speak with a New Zealand accent.","Amara":"Speak English with a Kenyan accent.","Marco":"Speak English with an Argentine (Buenos Aires) accent.","Yuki":"Speak English with a soft Japanese accent.","Zara":"Speak with a London English accent.","Rio":"Speak English with a Brazilian accent.","Naia":"Speak with an American accent.","Jade":"Speak English with a Korean accent.","Theo":"Speak with a Manchester / Northern English accent.","Aisha":"Speak English with a Gulf Arabic (Emirati) accent.","Felix":"Speak English with a German accent.","Maya":"Speak with an American accent.","Oscar":"Speak English with a Mexican accent.","Leila":"Speak English with a French accent.","Priya":"Speak with an Indian English accent.","Dex":"Speak with a Canadian accent.","Elena":"Speak English with a Spanish (Andalusian) accent.","Sam":"Speak English with a Nigerian accent.","River":"Speak English with a soft Swedish accent."};
+  var accent = ACCENTS[personaAlias] || '';
+  var base = (accent ? accent + ' ' : '') + (PERSONA_STYLE[personaAlias] || 'Natural, warm, and conversational.');
   var cues = [];
   var t = text || '';
   var lower = t.toLowerCase();
