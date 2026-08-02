@@ -71,9 +71,10 @@ module.exports = async function (fastify, opts) {
   // ── Status endpoint ──
   fastify.get("/status", async (request, reply) => {
     var userId = requireUserId(request, reply); if (!userId) return;
-    var user = await prisma.user.findUnique({ where: { id: userId }, select: { selfieVerified: true, idVerified: true, phoneVerified: true, trustScore: true } });
+    var user = await prisma.user.findUnique({ where: { id: userId }, select: { selfieVerified: true, idVerified: true, phoneVerified: true, trustScore: true, plan: true, planExpiresAt: true, verificationPaid: true } });
     if (!user) return reply.code(404).send({ error: "User not found" });
-    return { selfie: user.selfieVerified || false, id: user.idVerified || false, phone: user.phoneVerified || false, trustScore: user.trustScore || "unverified" };
+    var effPlan = user.plan || "free"; if (user.planExpiresAt && user.planExpiresAt < new Date()) effPlan = "free";
+    return { selfie: user.selfieVerified || false, id: user.idVerified || false, phone: user.phoneVerified || false, trustScore: user.trustScore || "unverified", plan: effPlan, verificationPaid: user.verificationPaid || false };
   });
 
   //    Mobile calls this, then opens the returned `url` with Linking.openURL().
