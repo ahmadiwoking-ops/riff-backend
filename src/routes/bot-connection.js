@@ -180,7 +180,7 @@ async function botConnectionRoutes(app) {
     const personaRecord = persona ? await prisma.botPersona.findFirst({ where: { alias: persona } }) : await prisma.botPersona.findFirst({ where: { alias: 'Luna' } });
     const response = await generateKimiResponse(personaRecord || { alias: persona || 'Luna' }, message, conversationHistory || [], (mode || 'chat'), null);
     let audio = null;
-    if (response.text) { audio = await generateAudioResponse(response.text, personaRecord?.alias || 'Luna'); }
+    // Audio now generated on-demand via /tts when the user taps play (saves cost + latency)
     await prisma.botConnectionUsage.update({ where: { id: usage.id }, data: { messageCount: usage.messageCount + 1 } });
     return { response: response.text, source: response.source, persona: personaRecord?.alias || 'Luna', audio: audio || null, isDemo: true, usage: { used: usage.messageCount + 1, limit: demoEffective, remaining: Math.max(0, demoEffective - usage.messageCount - 1) } };
   });
@@ -206,6 +206,22 @@ async function botConnectionRoutes(app) {
   });
 
   // ═══ Start a game ═══
+  // ═══ On-demand TTS: generate audio only when the user taps play ═══
+  app.post('/tts', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var text = request.body && request.body.text;
+    var persona = (request.body && request.body.persona) || 'Luna';
+    if (!text) return reply.code(400).send({ error: 'text required' });
+    if (text.length > 2000) text = text.slice(0, 2000);
+    try {
+      var audio = await generateAudioResponse(text, persona);
+      if (!audio) return reply.code(503).send({ error: 'Audio unavailable' });
+      return { audio: audio };
+    } catch (err) {
+      request.log.error(err, 'on-demand tts error');
+      return reply.code(500).send({ error: 'Could not generate audio' });
+    }
+  });
+
   app.post('/game/start', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { gameId, persona } = request.body;
     const game = GAME_DATA[gameId];
