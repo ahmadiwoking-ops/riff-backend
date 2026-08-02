@@ -38,6 +38,52 @@ const PERSONA_VOICES = {
   River: 'alloy',     // gentle, contemplative
 };
 
+// Per-persona base delivery style (steers gpt-4o-mini-tts for natural, in-character audio)
+const PERSONA_STYLE = {
+  Luna: 'Warm, gentle, thoughtful; soft and curious like a friend in a cozy bookshop.',
+  Kai: 'Calm, grounded, dry Kiwi humour; unhurried and reassuring.',
+  Amara: 'Bright, upbeat, energetic; expressive with an encouraging lift.',
+  Marco: 'Analytical, dry wit, measured and reflective, warm underneath.',
+  Yuki: 'Artistic, soft, a little dreamy, expressive musicality.',
+  Zara: 'Confident, charismatic, poised and articulate.',
+  Rio: 'Direct, punchy, energetic; casual and fast with playful bluntness.',
+  Naia: 'Calm, deep, philosophical; slow and serene.',
+  Jade: 'Fun, sweet, bubbly; playful and affectionate.',
+  Theo: 'Elegant, introverted, precise; quiet and refined.',
+  Aisha: 'Savvy, direct, expert; crisp with warm authority.',
+  Felix: 'Fun, articulate, quick-witted with easy charm.',
+  Maya: 'Sharp, professional, direct; clear and confident.',
+  Oscar: 'Nostalgic, funny, comedic warmth; playful timing.',
+  Leila: 'Funny, artistic, witty; light and expressive.',
+  Priya: 'Warm, articulate, thoughtful; gentle clarity.',
+  Dex: 'Expressive, chaotic energy; fast and animated.',
+  Elena: 'Intense, passionate, elegant; short lines with weight, comfortable with silence.',
+  Sam: 'Warm, protective, steady; reassuring and kind.',
+  River: 'Gentle, contemplative, artistic; soft and observant.',
+};
+
+// Detect emotional cues in the text and build a delivery instruction so the voice emotes naturally.
+function buildDeliveryInstructions(text, personaAlias) {
+  var base = PERSONA_STYLE[personaAlias] || 'Natural, warm, and conversational.';
+  var cues = [];
+  var t = text || '';
+  var lower = t.toLowerCase();
+  if (/\b(lol|lmao|haha|hehe|rofl|lmfao)\b/.test(lower)) cues.push('Let a genuine warm laugh come through where it fits.');
+  if (/\b(aww|aw)\b/.test(lower)) cues.push('Sound tender and endeared.');
+  if (/\*(sigh|sighs)\*|\bsigh\b/.test(lower)) cues.push('Include a soft sigh.');
+  if (/!{1,}/.test(t)) cues.push('Add lively excitement and energy.');
+  if (/\?\s*$/.test(t.trim())) cues.push('End with a curious, rising, questioning tone.');
+  if (/\.\.\.|…/.test(t)) cues.push('Add a thoughtful trailing pause at the ellipsis.');
+  if (/\b(sorry|apolog)/.test(lower)) cues.push('Sound sincere and gently apologetic.');
+  if (/\b(omg|wow|whoa|no way|oh my)\b/.test(lower)) cues.push('Convey genuine surprise and delight.');
+  if (/\b(love|adore|amazing|wonderful|beautiful|gorgeous)\b/.test(lower)) cues.push('Let genuine warmth and affection colour the words.');
+  if (/\b(hmm|hmmm|well|i guess)\b/.test(lower)) cues.push('Sound thoughtful and a little hesitant.');
+  var instr = base;
+  if (cues.length) instr += ' ' + cues.join(' ');
+  instr += ' Speak like a real person in natural conversation, not a narrator. Natural rhythm, breaths, and human imperfection.';
+  return instr;
+}
+
 const CORE_INSTRUCTIONS = `You are a person chatting on Riff, a social connection app where people connect through conversation before seeing each other.
 
 HOW YOU TALK:
