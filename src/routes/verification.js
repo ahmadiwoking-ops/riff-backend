@@ -264,12 +264,11 @@ module.exports = async function (fastify, opts) {
       // While there is no conclusive decision yet, Veriff returns 404 (or a body
       // with a null verification). Treat both as "pending".
       const rawBody = await res.text();
-      request.log.warn({ httpStatus: res.status, body: rawBody.slice(0, 400) }, 'VERIFF_DECISION_DEBUG');
-      if (res.status === 404) return reply.send({ status: 'pending', _debug: { httpStatus: 404 } });
+      if (res.status === 404) return reply.send({ status: 'pending' });
       let data = null; try { data = JSON.parse(rawBody); } catch (e) {}
       const verification = data && data.verification;
       if (!verification || !verification.status) {
-        return reply.send({ status: 'pending', _debug: { httpStatus: res.status, body: rawBody.slice(0, 300) } });
+        return reply.send({ status: 'pending' });
       }
 
       const decision = verification.status; // approved | declined | resubmission_requested | ...
