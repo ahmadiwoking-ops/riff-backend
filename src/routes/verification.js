@@ -276,7 +276,7 @@ module.exports = async function (fastify, opts) {
 
       await prisma.user.update({
         where: { id: userId },
-        data: { idVerified: approved },
+        data: { idVerified: approved , trustScore: approved ? 'green' : undefined },
       });
 
       return reply.send({ status: decision, idVerified: approved });
