@@ -193,6 +193,7 @@ module.exports = async function (fastify, opts) {
         where: { id: vendorData }, // NOTE: if User.id is an Int, use Number(vendorData)
         data: {
           idVerified: approved,
+          trustScore: approved ? 'green' : undefined,
         },
       });
     } catch (err) {
@@ -218,6 +219,11 @@ module.exports = async function (fastify, opts) {
     try {
       var selfieData = { selfieVerified: !!passed };
       if (selfie) selfieData.verificationSelfie = selfie;
+      // Selfie done -> yellow badge (unless already green from full ID verification)
+      if (passed) {
+        var cur = await prisma.user.findUnique({ where: { id: userId }, select: { trustScore: true } });
+        if (!cur || cur.trustScore !== 'green') selfieData.trustScore = 'yellow';
+      }
       await prisma.user.update({
         where: { id: userId },
         data: selfieData,

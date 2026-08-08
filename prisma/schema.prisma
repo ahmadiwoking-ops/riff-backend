@@ -30,7 +30,7 @@ model User {
   verifiedName    String?
   verifiedDOB     DateTime?
   verifiedCountry String?
-  trustScore      String   @default("green")
+  trustScore      String   @default("red")
   trustFlags      Int      @default(0)
   plan            String   @default("free")
   stripeCustomerId String?
