@@ -1,6 +1,7 @@
 const prisma = require('../db');
 const { generateKimiResponse, generateAudioResponse, GAME_DATA } = require('../services/kimi-bot');
 const { loadMemory, updateMemory } = require('../services/persona-memory');
+const FREE_PERSONAS = ['Luna', 'Zara', 'Naia', 'Oscar', 'Maya']; // 5 personas available on free plan
 
 async function botConnectionRoutes(app) {
 
@@ -171,6 +172,11 @@ async function botConnectionRoutes(app) {
     const DEMO_LIMIT = 50;
     const { message, conversationHistory, persona, mode } = request.body;
     if (!message) return reply.code(400).send({ error: 'Message required' });
+    // Free plan can only chat with the 5 free personas; the other 15 require a subscription.
+    if (persona && !FREE_PERSONAS.includes(persona)) {
+      return reply.code(403).send({ locked: true, upgrade: true, code: 'PERSONA_LOCKED',
+        message: persona + ' is available on paid plans. Subscribe to chat with all 20 companions.' });
+    }
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     let usage = await prisma.botConnectionUsage.findFirst({ where: { userId: request.user.id, monthStart: monthStart } });
