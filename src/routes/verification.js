@@ -142,7 +142,9 @@ module.exports = async function (fastify, opts) {
         body: sessionBody,
       });
 
-      const data = await res.json();
+      const rawBody = await res.text();
+      request.log.warn({ httpStatus: res.status, body: rawBody.slice(0, 400) }, 'VERIFF_DECISION_DEBUG');
+      let data = null; try { data = JSON.parse(rawBody); } catch (e) {}
       if (!res.ok || !data.verification) {
         request.log.error({ status: res.status, data }, 'Veriff session creation failed');
         return reply.code(502).send({ error: 'Could not create verification session' });
