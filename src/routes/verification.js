@@ -268,7 +268,7 @@ module.exports = async function (fastify, opts) {
       const data = await res.json();
       const verification = data && data.verification;
       if (!verification || !verification.status) {
-        return reply.send({ status: 'pending' });
+        return reply.send({ status: 'pending', _debug: { httpStatus: res.status, body: rawBody.slice(0, 300) } });
       }
 
       const decision = verification.status; // approved | declined | resubmission_requested | ...
