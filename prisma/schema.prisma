@@ -25,6 +25,8 @@ model User {
   verificationPaid Boolean @default(false)
   selfieVerified  Boolean  @default(false)
   verificationSelfie String?
+  circleSelfie    String?   // locked live selfie from circle reveal (anti-fake reference)
+  displayPhoto    String?   // updatable profile pic shown to others
   verifiedName    String?
   verifiedDOB     DateTime?
   verifiedCountry String?

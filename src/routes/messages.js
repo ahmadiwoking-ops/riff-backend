@@ -10,6 +10,20 @@ async function messageRoutes(app) {
   });
   app.post('/', { preHandler: [app.authenticate] }, async (request) => {
     const { connectionId, circleId, content, type } = request.body;
+    // ── Free-tier Deep Connection trial: free for 1 week from registration, then read-only ──
+    if (connectionId && !circleId) {
+      const sender = await prisma.user.findUnique({ where: { id: request.user.id }, select: { plan: true, planExpiresAt: true, createdAt: true } });
+      let plan = sender.plan || 'free';
+      if (sender.planExpiresAt && sender.planExpiresAt < new Date()) plan = 'free';
+      if (plan === 'free') {
+        const weekMs = 7 * 24 * 60 * 60 * 1000;
+        const elapsed = Date.now() - new Date(sender.createdAt).getTime();
+        if (elapsed > weekMs) {
+          return { locked: true, upgrade: true, code: 'TRIAL_ENDED',
+                   message: 'Your free week of deep connections has ended. Subscribe to Riff Single, Explorer, or Inner Circle to keep sending messages.' };
+        }
+      }
+    }
     const message = await prisma.message.create({ data: { connectionId, circleId, senderId: request.user.id, content, type: type || 'text' }, include: { sender: { select: { alias: true } } } });
     return { message };
   });

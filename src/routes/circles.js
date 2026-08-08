@@ -113,22 +113,34 @@ async function circleRoutes(app) {
     if (!photo) return { error: 'photo required' };
     var member = await prisma.circleMember.findFirst({ where: { circleId: circleId, userId: request.user.id } });
     if (!member) return { error: 'Not a member' };
+    // Model B: revealing your live selfie unlocks the circle for YOU immediately.
     await prisma.circleMember.update({ where: { id: member.id }, data: { selfiePhoto: photo, revealDecision: 'reveal' } });
+    // Lock the selfie to the user's profile as the anti-fake reference (only set once — never overwritten).
+    var u = await prisma.user.findUnique({ where: { id: request.user.id }, select: { circleSelfie: true, displayPhoto: true } });
+    var profileData = {};
+    if (!u || !u.circleSelfie) profileData.circleSelfie = photo;           // locked reference, set once
+    if (!u || !u.displayPhoto) profileData.displayPhoto = photo;           // default display pic (updatable later)
+    if (Object.keys(profileData).length) await prisma.user.update({ where: { id: request.user.id }, data: profileData });
+    // Count how many have now revealed (for a nice notification), but don't gate on it.
     var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
-    var allSubmitted = members.length > 0 && members.every(function(m) { return m.selfiePhoto; });
-    if (allSubmitted) {
-      await prisma.circle.update({ where: { id: circleId }, data: { revealedAt: new Date(), stage: 'connected' } });
-    }
-    return { status: 'saved', allSubmitted: allSubmitted, message: allSubmitted ? 'Everyone revealed — meet your circle!' : 'Selfie saved. Waiting for others...' };
+    var revealedCount = members.filter(function(m) { return m.selfiePhoto; }).length;
+    var allRevealed = revealedCount === members.length;
+    if (allRevealed) await prisma.circle.update({ where: { id: circleId }, data: { revealedAt: new Date() } });
+    return { status: 'revealed', revealedCount: revealedCount, total: members.length, allRevealed: allRevealed, message: 'You revealed! You can now see everyone else who has revealed.' };
   });
 
   // ═══ Get circle reveal photos ═══
   app.get('/:id/reveal', { preHandler: [app.authenticate] }, async (request) => {
     var circleId = request.params.id;
     var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
-    var allSubmitted = members.length > 0 && members.every(function(m) { return m.selfiePhoto; });
-    if (!allSubmitted) return { ready: false, message: 'Waiting for all members to reveal' };
-    return { ready: true, photos: members.map(function(m) { return { userId: m.userId, alias: m.alias, photo: m.selfiePhoto }; }) };
+    var me = members.find(function(m) { return m.userId === request.user.id; });
+    var iRevealed = !!(me && me.selfiePhoto);
+    var revealedMembers = members.filter(function(m) { return m.selfiePhoto; });
+    if (!iRevealed) {
+      return { ready: false, iRevealed: false, revealedCount: revealedMembers.length, total: members.length, message: 'Reveal your selfie to see everyone who has revealed.' };
+    }
+    // I've revealed — show everyone else who has also revealed.
+    return { ready: true, iRevealed: true, revealedCount: revealedMembers.length, total: members.length, photos: revealedMembers.map(function(m) { return { userId: m.userId, alias: m.alias, photo: m.selfiePhoto }; }) };
   });
 
   // ═══ Decline to reveal ═══
