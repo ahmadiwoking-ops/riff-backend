@@ -142,9 +142,7 @@ module.exports = async function (fastify, opts) {
         body: sessionBody,
       });
 
-      const rawBody = await res.text();
-      request.log.warn({ httpStatus: res.status, body: rawBody.slice(0, 400) }, 'VERIFF_DECISION_DEBUG');
-      let data = null; try { data = JSON.parse(rawBody); } catch (e) {}
+      const data = await res.json();
       if (!res.ok || !data.verification) {
         request.log.error({ status: res.status, data }, 'Veriff session creation failed');
         return reply.code(502).send({ error: 'Could not create verification session' });
@@ -265,9 +263,10 @@ module.exports = async function (fastify, opts) {
 
       // While there is no conclusive decision yet, Veriff returns 404 (or a body
       // with a null verification). Treat both as "pending".
-      if (res.status === 404) return reply.send({ status: 'pending' });
-
-      const data = await res.json();
+      const rawBody = await res.text();
+      request.log.warn({ httpStatus: res.status, body: rawBody.slice(0, 400) }, 'VERIFF_DECISION_DEBUG');
+      if (res.status === 404) return reply.send({ status: 'pending', _debug: { httpStatus: 404 } });
+      let data = null; try { data = JSON.parse(rawBody); } catch (e) {}
       const verification = data && data.verification;
       if (!verification || !verification.status) {
         return reply.send({ status: 'pending', _debug: { httpStatus: res.status, body: rawBody.slice(0, 300) } });
