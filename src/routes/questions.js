@@ -135,7 +135,7 @@ async function runMatching(userId) {
   // should ever be offered as a match.
   var blockRows = await prisma.block.findMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] }, select: { blockerId: true, blockedId: true } });
   var blockedIds = blockRows.map(function (b) { return b.blockerId === userId ? b.blockedId : b.blockerId; });
-  var candidates = await prisma.user.findMany({ where: { id: { not: userId, notIn: blockedIds } }, select: { id: true, alias: true, connectionType: true, matchVector: true, idVerified: true, trustScore: true, plan: true } });
+  var candidates = await prisma.user.findMany({ where: { id: { not: userId, notIn: blockedIds } }, select: { id: true, alias: true, connectionType: true, matchVector: true, idVerified: true, trustScore: true, plan: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } });
   var filtered = candidates.filter(function(c) {
     if (!c.matchVector || !c.matchVector.answers) return false;
     if (myTopics.length === 0) return true;
@@ -148,7 +148,7 @@ async function runMatching(userId) {
   for (var i = 0; i < filtered.length; i++) {
     var o = filtered[i];
     var score = calculateMatchScore(myAnswers, toArr(o.matchVector.answers), me.connectionType || 'all');
-    if (score.overall >= 40) scored.push({ userId: o.id, alias: o.alias, score: score.overall, breakdown: score.breakdown, idVerified: o.idVerified === true, trustScore: o.trustScore || 'green' });
+    if (score.overall >= 40) scored.push({ userId: o.id, alias: o.alias, score: score.overall, breakdown: score.breakdown, idVerified: o.idVerified === true, trustScore: o.trustScore || 'green', avatarEmoji: o.avatarEmoji || null, avatarColour: o.avatarColour || null });
   }
   scored.sort(function(a, b) { return b.score - a.score; });
   var top = scored.slice(0, 10);

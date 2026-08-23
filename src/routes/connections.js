@@ -8,7 +8,7 @@ async function connectionRoutes(app) {
     const userId = request.user.id;
     var all = await prisma.connection.findMany({
       where: { OR: [{ userAId: userId }, { userBId: userId }] },
-      include: { userA: { select: { id: true, alias: true, trustScore: true, idVerified: true } }, userB: { select: { id: true, alias: true, trustScore: true, idVerified: true } } },
+      include: { userA: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } }, userB: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } } },
       orderBy: { updatedAt: 'desc' },
     });
     // Split into active and ended (ended = recoverable via Connect back)

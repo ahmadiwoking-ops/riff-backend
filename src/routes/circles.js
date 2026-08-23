@@ -5,13 +5,13 @@ const { getCircleStatus } = require('../services/circle-stages');
 async function circleRoutes(app) {
   // Get my circles
   app.get('/', { preHandler: [app.authenticate] }, async (request) => {
-    const memberships = await prisma.circleMember.findMany({ where: { userId: request.user.id, isActive: true }, include: { circle: { include: { members: { include: { user: { select: { alias: true, trustScore: true } } } } } } } });
+    const memberships = await prisma.circleMember.findMany({ where: { userId: request.user.id, isActive: true }, include: { circle: { include: { members: { include: { user: { select: { alias: true, trustScore: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } } } } } } } });
     return { circles: memberships.map(m => m.circle) };
   });
 
   // Get circle detail
   app.get('/:id', { preHandler: [app.authenticate] }, async (request) => {
-    return { circle: await prisma.circle.findUnique({ where: { id: request.params.id }, include: { members: { include: { user: { select: { id: true, alias: true, trustScore: true } } } }, rounds: { orderBy: { roundNum: 'desc' }, take: 5, include: { answers: true } }, games: { where: { status: 'active' } } } }) };
+    return { circle: await prisma.circle.findUnique({ where: { id: request.params.id }, include: { members: { include: { user: { select: { id: true, alias: true, trustScore: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } } } }, rounds: { orderBy: { roundNum: 'desc' }, take: 5, include: { answers: true } }, games: { where: { status: 'active' } } } }) };
   });
 
   // Join a circle — with plan-based limits
