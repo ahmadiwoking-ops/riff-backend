@@ -81,6 +81,13 @@ async function adminRoutes(app) {
         prisma.safetyFlag.deleteMany({ where: { userId } }),
         prisma.notification.deleteMany({ where: { userId } }),
         prisma.questionAnswer.deleteMany({ where: { userId } }),
+        prisma.botConnectionUsage.deleteMany({ where: { userId } }),
+        prisma.circleRoundAnswer.deleteMany({ where: { userId } }),
+        prisma.gameResponse.deleteMany({ where: { userId } }),
+        prisma.genieMessage.deleteMany({ where: { userId } }),
+        prisma.genieUsage.deleteMany({ where: { userId } }),
+        prisma.personaMemory.deleteMany({ where: { userId } }),
+        prisma.circleVote.deleteMany({ where: { OR: [{ targetUserId: userId }, { voterUserId: userId }] } }),
         // Finally delete the user
         prisma.user.delete({ where: { id: userId } }),
       ]);

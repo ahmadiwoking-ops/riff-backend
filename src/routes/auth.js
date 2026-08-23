@@ -55,4 +55,47 @@ async function authRoutes(app) {
     });
   });
 }
+  // ═══ Delete my account (App Store / Play Store requirement + UK GDPR erasure) ═══
+  // Permanent and immediate. Requires the user to confirm by sending { confirm: 'DELETE' }.
+  app.delete('/me', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const userId = request.user.id;
+    if (!request.body || request.body.confirm !== 'DELETE') {
+      return reply.code(400).send({ error: 'Confirmation required', code: 'CONFIRM_REQUIRED' });
+    }
+    try {
+      const connections = await prisma.connection.findMany({ where: { OR: [{ userAId: userId }, { userBId: userId }] }, select: { id: true } });
+      const connIds = connections.map(function(c) { return c.id; });
+      await prisma.$transaction([
+        prisma.voiceScore.deleteMany({ where: { OR: [{ scorerId: userId }, { scoredId: userId }] } }),
+        prisma.voiceMessage.deleteMany({ where: { senderId: userId } }),
+        prisma.message.deleteMany({ where: { OR: [{ senderId: userId }, { receiverId: userId }] } }),
+        ...(connIds.length ? [
+          prisma.voiceScore.deleteMany({ where: { connectionId: { in: connIds } } }),
+          prisma.voiceMessage.deleteMany({ where: { connectionId: { in: connIds } } }),
+          prisma.message.deleteMany({ where: { connectionId: { in: connIds } } }),
+        ] : []),
+        prisma.connection.deleteMany({ where: { OR: [{ userAId: userId }, { userBId: userId }] } }),
+        prisma.circleMember.deleteMany({ where: { userId: userId } }),
+        prisma.photo.deleteMany({ where: { userId: userId } }),
+        prisma.lifeChapter.deleteMany({ where: { userId: userId } }),
+        prisma.safetyFlag.deleteMany({ where: { userId: userId } }),
+        prisma.notification.deleteMany({ where: { userId: userId } }),
+        prisma.questionAnswer.deleteMany({ where: { userId: userId } }),
+        prisma.botConnectionUsage.deleteMany({ where: { userId: userId } }),
+        prisma.circleRoundAnswer.deleteMany({ where: { userId: userId } }),
+        prisma.gameResponse.deleteMany({ where: { userId: userId } }),
+        prisma.genieMessage.deleteMany({ where: { userId: userId } }),
+        prisma.genieUsage.deleteMany({ where: { userId: userId } }),
+        prisma.personaMemory.deleteMany({ where: { userId: userId } }),
+        prisma.circleVote.deleteMany({ where: { OR: [{ targetUserId: userId }, { voterUserId: userId }] } }),
+        prisma.user.delete({ where: { id: userId } }),
+      ]);
+      request.log.warn({ userId: userId }, 'User self-deleted account');
+      return { status: 'deleted' };
+    } catch (err) {
+      request.log.error(err, 'self delete failed');
+      return reply.code(500).send({ error: 'Could not delete account. Please contact support.' });
+    }
+  });
+
 module.exports = authRoutes;
