@@ -1,6 +1,12 @@
 const prisma = require('../db');
 
 async function questionRoutes(app) {
+  // Answers can be redone, but not used as a slot machine: a redo rebuilds the
+  // whole match set, so unlimited redos would let people re-roll until they like
+  // who they see. Grace window covers the genuine 'I misread a question' case.
+  var REDO_COOLDOWN_DAYS = 30;
+  var REDO_GRACE_HOURS = 48;
+
   app.get('/pool', { preHandler: [app.authenticate] }, async () => {
     return { questions: QUESTION_POOL };
   });
@@ -17,9 +23,34 @@ async function questionRoutes(app) {
       var zodiacSign = zodiacAnswer ? zodiacAnswer.answer : null;
       if (zodiacSign === "I don't know") zodiacSign = null;
       var topics = answerMap.q6 ? (Array.isArray(answerMap.q6.answer) ? answerMap.q6.answer : [answerMap.q6.answer]) : [];
+
+      // ── Redo rules ──
+      var existing = await prisma.user.findUnique({ where: { id: request.user.id }, select: { matchVector: true } });
+      var mv = existing && existing.matchVector;
+      var firstAnsweredAt = (mv && mv.firstAnsweredAt) || (mv && mv.answeredAt) || null;
+      if (mv && mv.answers && firstAnsweredAt) {
+        var hoursSinceFirst = (Date.now() - new Date(firstAnsweredAt).getTime()) / 36e5;
+        var daysSinceLast = (Date.now() - new Date(mv.answeredAt || firstAnsweredAt).getTime()) / 864e5;
+        var connCount = 0;
+        if (hoursSinceFirst <= REDO_GRACE_HOURS) {
+          connCount = await prisma.connection.count({ where: { OR: [{ userAId: request.user.id }, { userBId: request.user.id }], isPractice: false } });
+        }
+        var inGrace = hoursSinceFirst <= REDO_GRACE_HOURS && connCount === 0;
+        if (!inGrace && daysSinceLast < REDO_COOLDOWN_DAYS) {
+          var nextAllowed = new Date(new Date(mv.answeredAt || firstAnsweredAt).getTime() + REDO_COOLDOWN_DAYS * 864e5);
+          return {
+            error: 'You can update your answers once every ' + REDO_COOLDOWN_DAYS + ' days.',
+            code: 'REDO_COOLDOWN',
+            nextAllowedAt: nextAllowed.toISOString(),
+            daysRemaining: Math.ceil(REDO_COOLDOWN_DAYS - daysSinceLast),
+          };
+        }
+        request.log.warn({ userId: request.user.id, daysSinceLast: Math.round(daysSinceLast), inGrace: inGrace }, 'QUESTIONS_REDO');
+      }
+
       await prisma.user.update({
         where: { id: request.user.id },
-        data: { matchVector: { answers: answerMap, zodiacSign: zodiacSign, answeredAt: new Date().toISOString(), questionCount: answers.length, filterKeys: { topics: topics } } },
+        data: { matchVector: { answers: answerMap, zodiacSign: zodiacSign, answeredAt: new Date().toISOString(), firstAnsweredAt: firstAnsweredAt || new Date().toISOString(), questionCount: answers.length, filterKeys: { topics: topics } } },
       });
       runMatchingAsync(request.user.id).catch(function(e) { console.log('[matching] Async error:', e.message); });
       return { status: 'saved', answersCount: answers.length };
