@@ -57,6 +57,36 @@ async function questionRoutes(app) {
     } catch (err) { console.log('[questions] Submit error:', err.message); return { error: 'Failed to save: ' + err.message }; }
   });
 
+  // Lets the client show eligibility BEFORE someone answers 25 questions again,
+  // rather than telling them it was refused after eight minutes of work.
+  app.get('/redo-eligibility', { preHandler: [app.authenticate] }, async (request) => {
+    var u = await prisma.user.findUnique({ where: { id: request.user.id }, select: { matchVector: true } });
+    var mv = u && u.matchVector;
+    if (!mv || !mv.answers) {
+      return { hasAnswered: false, canRedo: true, cooldownDays: REDO_COOLDOWN_DAYS };
+    }
+    var firstAnsweredAt = mv.firstAnsweredAt || mv.answeredAt;
+    var lastAnsweredAt = mv.answeredAt || firstAnsweredAt;
+    var hoursSinceFirst = (Date.now() - new Date(firstAnsweredAt).getTime()) / 36e5;
+    var daysSinceLast = (Date.now() - new Date(lastAnsweredAt).getTime()) / 864e5;
+    var connCount = 0;
+    if (hoursSinceFirst <= REDO_GRACE_HOURS) {
+      connCount = await prisma.connection.count({ where: { OR: [{ userAId: request.user.id }, { userBId: request.user.id }], isPractice: false } });
+    }
+    var inGrace = hoursSinceFirst <= REDO_GRACE_HOURS && connCount === 0;
+    var canRedo = inGrace || daysSinceLast >= REDO_COOLDOWN_DAYS;
+    var nextAllowed = new Date(new Date(lastAnsweredAt).getTime() + REDO_COOLDOWN_DAYS * 864e5);
+    return {
+      hasAnswered: true,
+      canRedo: canRedo,
+      inGrace: inGrace,
+      lastAnsweredAt: lastAnsweredAt,
+      nextAllowedAt: canRedo ? null : nextAllowed.toISOString(),
+      daysRemaining: canRedo ? 0 : Math.ceil(REDO_COOLDOWN_DAYS - daysSinceLast),
+      cooldownDays: REDO_COOLDOWN_DAYS,
+    };
+  });
+
   app.get('/my-answers', { preHandler: [app.authenticate] }, async (request) => {
     var user = await prisma.user.findUnique({ where: { id: request.user.id }, select: { matchVector: true } });
     return { answers: user && user.matchVector ? user.matchVector.answers || {} : {} };
