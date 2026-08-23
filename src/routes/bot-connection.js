@@ -2,6 +2,9 @@ const prisma = require('../db');
 const { generateKimiResponse, generateAudioResponse, GAME_DATA } = require('../services/kimi-bot');
 const { loadMemory, updateMemory } = require('../services/persona-memory');
 const FREE_PERSONAS = ['Luna', 'Zara', 'Naia', 'Oscar', 'Maya']; // 5 personas available on free plan
+// Personas that discuss adult topics candidly. Subscription is a payment, not an
+// age check — these require completed ID verification (idVerified), not just a plan.
+const VERIFIED_ONLY_PERSONAS = ['Yuki'];
 
 async function botConnectionRoutes(app) {
 
@@ -115,6 +118,14 @@ async function botConnectionRoutes(app) {
       return reply.code(403).send({ error: 'Bot Connection subscription required', code: 'NO_SUBSCRIPTION' });
     }
 
+    // Age-restricted personas require real ID verification, not just a subscription.
+    if (persona && VERIFIED_ONLY_PERSONAS.includes(persona)) {
+      const vu = await prisma.user.findUnique({ where: { id: request.user.id }, select: { idVerified: true } });
+      if (!vu || vu.idVerified !== true) {
+        return reply.code(403).send({ error: persona + ' is only available to ID-verified adults. Complete verification in your profile to chat with them.', code: 'VERIFICATION_REQUIRED', persona: persona });
+      }
+    }
+
     // Check usage limit
     const usage = await checkUsage(request.user.id);
     const effectiveLimit = 500 + (usage.bonusMessages || 0);
@@ -173,6 +184,9 @@ async function botConnectionRoutes(app) {
     const { message, conversationHistory, persona, mode } = request.body;
     if (!message) return reply.code(400).send({ error: 'Message required' });
     // Free plan can only chat with the 5 free personas; the other 15 require a subscription.
+    if (persona && VERIFIED_ONLY_PERSONAS.includes(persona)) {
+      return reply.code(403).send({ error: persona + ' is only available to ID-verified adults on a paid plan.', code: 'VERIFICATION_REQUIRED', persona: persona });
+    }
     if (persona && !FREE_PERSONAS.includes(persona)) {
       return reply.code(403).send({ locked: true, upgrade: true, code: 'PERSONA_LOCKED',
         message: persona + ' is available on paid plans. Subscribe to chat with all 20 companions.' });
