@@ -93,13 +93,14 @@ async function safetyRoutes(app) {
     });
     const ids = blocks.map(function (b) { return b.blockedId; });
     const users = ids.length
-      ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, alias: true } })
+      ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, alias: true, avatarEmoji: true, avatarColour: true } })
       : [];
     const byId = {};
-    users.forEach(function (u) { byId[u.id] = u.alias; });
+    users.forEach(function (u) { byId[u.id] = u; });
     return {
       blocks: blocks.map(function (b) {
-        return { userId: b.blockedId, alias: byId[b.blockedId] || 'Deleted user', createdAt: b.createdAt };
+        var u = byId[b.blockedId];
+        return { userId: b.blockedId, alias: (u && u.alias) || 'Deleted user', avatarEmoji: u ? u.avatarEmoji : null, avatarColour: u ? u.avatarColour : null, createdAt: b.createdAt };
       }),
     };
   });
