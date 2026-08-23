@@ -70,7 +70,11 @@ async function runMatching(userId) {
   if (!me || !me.matchVector || !me.matchVector.answers) return [];
   var myAnswers = toArr(me.matchVector.answers);
   var myTopics = me.matchVector.filterKeys ? me.matchVector.filterKeys.topics || [] : [];
-  var candidates = await prisma.user.findMany({ where: { id: { not: userId } }, select: { id: true, alias: true, connectionType: true, matchVector: true, idVerified: true, trustScore: true, plan: true } });
+  // Blocks are mutual in effect: if either person blocked the other, neither
+  // should ever be offered as a match.
+  var blockRows = await prisma.block.findMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] }, select: { blockerId: true, blockedId: true } });
+  var blockedIds = blockRows.map(function (b) { return b.blockerId === userId ? b.blockedId : b.blockerId; });
+  var candidates = await prisma.user.findMany({ where: { id: { not: userId, notIn: blockedIds } }, select: { id: true, alias: true, connectionType: true, matchVector: true, idVerified: true, trustScore: true, plan: true } });
   var filtered = candidates.filter(function(c) {
     if (!c.matchVector || !c.matchVector.answers) return false;
     if (myTopics.length === 0) return true;

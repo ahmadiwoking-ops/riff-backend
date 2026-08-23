@@ -24,6 +24,19 @@ async function messageRoutes(app) {
         }
       }
     }
+    // ── Blocking: refuse messages between blocked users, in either direction ──
+    if (connectionId) {
+      const conn = await prisma.connection.findUnique({ where: { id: connectionId }, select: { userAId: true, userBId: true } });
+      if (conn) {
+        const otherId = conn.userAId === request.user.id ? conn.userBId : conn.userAId;
+        const blockedPair = await prisma.block.findFirst({
+          where: { OR: [ { blockerId: request.user.id, blockedId: otherId }, { blockerId: otherId, blockedId: request.user.id } ] },
+        });
+        // Silent: the sender is not told they are blocked. The connection has
+        // already ended, and telling an abuser they are blocked can escalate.
+        if (blockedPair) return { message: null, delivered: false };
+      }
+    }
     const message = await prisma.message.create({ data: { connectionId, circleId, senderId: request.user.id, content, type: type || 'text' }, include: { sender: { select: { alias: true } } } });
     return { message };
   });
