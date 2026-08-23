@@ -15,7 +15,21 @@ async function adminRoutes(app) {
   });
 
   app.get('/flags', { preHandler: [app.authenticate] }, async () => {
-    return { flags: await prisma.safetyFlag.findMany({ where: { status: 'pending' }, include: { user: { select: { id: true, alias: true, trustScore: true } } }, orderBy: { createdAt: 'asc' }, take: 50 }) };
+    var rows = await prisma.safetyFlag.findMany({ where: { status: 'pending' }, include: { user: { select: { id: true, alias: true, trustScore: true } } }, orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }], take: 50 });
+    // user can be null when the reported account has since been deleted —
+    // fall back to the snapshot taken at report time so the record stays useful.
+    var reporterIds = rows.map(function (r) { return r.reporterId; }).filter(Boolean);
+    var reporters = reporterIds.length ? await prisma.user.findMany({ where: { id: { in: reporterIds } }, select: { id: true, alias: true } }) : [];
+    var byId = {};
+    reporters.forEach(function (u) { byId[u.id] = u.alias; });
+    return { flags: rows.map(function (r) {
+      return Object.assign({}, r, {
+        subjectAlias: r.user ? r.user.alias : (r.subjectAliasSnapshot || 'Deleted user'),
+        subjectEmail: r.user ? null : (r.subjectEmailSnapshot || null),
+        subjectDeleted: !r.user,
+        reportedBy: r.reporterId ? (byId[r.reporterId] || 'Deleted user') : 'Automated',
+      });
+    }) };
   });
 
   app.post('/flags/:id/resolve', { preHandler: [app.authenticate] }, async (request) => {
@@ -78,8 +92,10 @@ async function adminRoutes(app) {
         // User-owned records
         prisma.photo.deleteMany({ where: { userId } }),
         prisma.lifeChapter.deleteMany({ where: { userId } }),
-        prisma.safetyFlag.deleteMany({ where: { userId } }),
+        prisma.safetyFlag.updateMany({ where: { userId }, data: { userId: null } }),
+        prisma.safetyFlag.updateMany({ where: { reporterId: userId }, data: { reporterId: null } }),
         prisma.notification.deleteMany({ where: { userId } }),
+        prisma.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
         prisma.questionAnswer.deleteMany({ where: { userId } }),
         prisma.botConnectionUsage.deleteMany({ where: { userId } }),
         prisma.circleRoundAnswer.deleteMany({ where: { userId } }),

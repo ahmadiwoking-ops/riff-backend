@@ -300,7 +300,10 @@ model LifeChapter {
 
 model SafetyFlag {
   id           String   @id @default(cuid())
-  userId       String
+  userId       String?
+  reporterId   String?  // null = automated/system flag; set = reported by a user
+  subjectAliasSnapshot String?  // kept if the reported user later deletes their account
+  subjectEmailSnapshot String?  // lets you spot the same person re-registering
   flagType     String
   severity     String
   triggerContent String?
@@ -310,8 +313,19 @@ model SafetyFlag {
   reviewNotes  String?
   createdAt    DateTime @default(now())
   resolvedAt   DateTime?
-  user         User     @relation(fields: [userId], references: [id])
+  user         User?    @relation(fields: [userId], references: [id])
   @@index([status, severity])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  reason    String?
+  createdAt DateTime @default(now())
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
 }
 
 model Notification {
