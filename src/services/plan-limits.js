@@ -2,7 +2,7 @@ var PLAN_LIMITS = {
   free:           { deepConnections: 1, circles: 0 },  // circles NOT available on free
   single:         { deepConnections: 1, circles: 1 },  // Riff Single (was missing -> fell back to free)
   explorer:       { deepConnections: 2, circles: 3 },
-  inner_circle:   { deepConnections: 5, circles: 5 },
+  inner_circle:   { deepConnections: -1, circles: -1 },  // -1 = unlimited
   bot_connection: { deepConnections: 0, circles: 0 },
 };
 
