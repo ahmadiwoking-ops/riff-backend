@@ -54,7 +54,6 @@ async function authRoutes(app) {
       select: { id: true, alias: true, email: true, age: true, gender: true, seekingGender: true, connectionType: true, plan: true, trustScore: true, idVerified: true, createdAt: true },
     });
   });
-}
   // ═══ Delete my account (App Store / Play Store requirement + UK GDPR erasure) ═══
   // Permanent and immediate. Requires the user to confirm by sending { confirm: 'DELETE' }.
   app.delete('/me', { preHandler: [app.authenticate] }, async (request, reply) => {
@@ -98,4 +97,5 @@ async function authRoutes(app) {
     }
   });
 
+}
 module.exports = authRoutes;
