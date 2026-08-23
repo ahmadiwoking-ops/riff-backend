@@ -27,6 +27,8 @@ model User {
   verificationSelfie String?
   circleSelfie    String?   // locked live selfie from circle reveal (anti-fake reference)
   displayPhoto    String?   // updatable profile pic shown to others
+  avatarEmoji     String?   // lifestyle stand-in shown before a reveal
+  avatarColour    String?   // background colour for the avatar
   verifiedName    String?
   verifiedDOB     DateTime?
   verifiedCountry String?

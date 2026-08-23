@@ -51,7 +51,7 @@ async function authRoutes(app) {
   app.get('/me', { preHandler: [app.authenticate] }, async (request) => {
     return await prisma.user.findUnique({
       where: { id: request.user.id },
-      select: { id: true, alias: true, email: true, age: true, gender: true, seekingGender: true, connectionType: true, plan: true, trustScore: true, idVerified: true, createdAt: true },
+      select: { id: true, alias: true, email: true, age: true, gender: true, seekingGender: true, connectionType: true, plan: true, trustScore: true, idVerified: true, createdAt: true, avatarEmoji: true, avatarColour: true, displayPhoto: true },
     });
   });
   // ═══ Delete my account (App Store / Play Store requirement + UK GDPR erasure) ═══
