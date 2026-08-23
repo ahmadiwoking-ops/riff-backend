@@ -129,6 +129,30 @@ async function doBlock(blockerId, blockedId, reason) {
     create: { blockerId: blockerId, blockedId: blockedId, reason: reason },
   });
 
+  // If they share an active circle, blocking cannot quietly remove either of
+  // them without breaking the group — so raise it for a human to judge.
+  var myCircles = await prisma.circleMember.findMany({ where: { userId: blockerId, isActive: true }, select: { circleId: true } });
+  if (myCircles.length) {
+    var ids = myCircles.map(function (c) { return c.circleId; });
+    var shared = await prisma.circleMember.findFirst({ where: { userId: blockedId, isActive: true, circleId: { in: ids } }, select: { circleId: true } });
+    if (shared) {
+      var already = await prisma.safetyFlag.findFirst({ where: { userId: blockedId, reporterId: blockerId, flagType: 'blocked_in_circle', status: 'pending' } });
+      if (!already) {
+        var subject = await prisma.user.findUnique({ where: { id: blockedId }, select: { alias: true, email: true } });
+        await prisma.safetyFlag.create({ data: {
+          userId: blockedId,
+          reporterId: blockerId,
+          subjectAliasSnapshot: subject ? subject.alias : null,
+          subjectEmailSnapshot: subject ? subject.email : null,
+          flagType: 'blocked_in_circle',
+          severity: 'medium',
+          triggerContent: 'One member blocked another while both are in circle ' + shared.circleId + '. Decide whether either should be moved.',
+          status: 'pending',
+        } });
+      }
+    }
+  }
+
   // End any deep connection between them. A block means it is over, not hidden.
   await prisma.connection.updateMany({
     where: {

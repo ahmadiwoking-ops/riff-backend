@@ -61,6 +61,23 @@ async function circleRoutes(app) {
       }
     }
 
+    // Never place someone in a circle containing anyone they have blocked, or
+    // anyone who has blocked them. Existing circles are left alone — removing a
+    // member mid-circle is a judgement call, so that path raises a flag instead.
+    var memberRows = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true }, select: { userId: true } });
+    var memberIds = memberRows.map(function (m) { return m.userId; });
+    if (memberIds.length) {
+      var clash = await prisma.block.findFirst({
+        where: { OR: [
+          { blockerId: myId, blockedId: { in: memberIds } },
+          { blockedId: myId, blockerId: { in: memberIds } },
+        ] },
+      });
+      if (clash) {
+        return { error: 'We could not add you to this circle. We will find you another one.', code: 'BLOCKED_MEMBER' };
+      }
+    }
+
     // Join the circle
     var member = await prisma.circleMember.create({
       data: { circleId: circleId, userId: myId, alias: request.user.alias || 'Member' },
