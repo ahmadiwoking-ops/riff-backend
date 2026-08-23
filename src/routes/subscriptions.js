@@ -86,9 +86,34 @@ async function subscriptionRoutes(app) {
     return { checkoutUrl: session.url, sessionId: session.id };
   });
 
-  app.post('/cancel', { preHandler: [app.authenticate] }, async (request) => {
-    await prisma.user.update({ where: { id: request.user.id }, data: { plan: 'free', planExpiresAt: null } });
-    return { status: 'cancelled', plan: 'free' };
+  app.post('/cancel', { preHandler: [app.authenticate] }, async (request, reply) => {
+    // Cancel in Stripe at PERIOD END: the user keeps what they paid for, and the
+    // customer.subscription.deleted webhook downgrades the plan when it actually lapses.
+    const u = await prisma.user.findUnique({ where: { id: request.user.id }, select: { stripeCustomerId: true, plan: true, planExpiresAt: true } });
+    if (!u) return reply.code(404).send({ error: 'User not found' });
+    if (!u.stripeCustomerId || !process.env.STRIPE_SECRET_KEY) {
+      // No Stripe record (e.g. comped or legacy account) — downgrade locally.
+      await prisma.user.update({ where: { id: request.user.id }, data: { plan: 'free', planExpiresAt: null } });
+      return { status: 'cancelled', plan: 'free' };
+    }
+    try {
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+      const subs = await stripe.subscriptions.list({ customer: u.stripeCustomerId, status: 'active', limit: 10 });
+      let endsAt = null;
+      for (const s of subs.data) {
+        const updated = await stripe.subscriptions.update(s.id, { cancel_at_period_end: true });
+        if (updated.current_period_end) endsAt = new Date(updated.current_period_end * 1000);
+      }
+      if (!subs.data.length) {
+        await prisma.user.update({ where: { id: request.user.id }, data: { plan: 'free', planExpiresAt: null } });
+        return { status: 'cancelled', plan: 'free' };
+      }
+      if (endsAt) await prisma.user.update({ where: { id: request.user.id }, data: { planExpiresAt: endsAt } });
+      return { status: 'cancelling', plan: u.plan, accessUntil: endsAt, message: 'Your subscription will not renew. You keep full access until ' + (endsAt ? endsAt.toDateString() : 'the end of your billing period') + '.' };
+    } catch (err) {
+      request.log.error(err, 'stripe cancel failed');
+      return reply.code(500).send({ error: 'Could not cancel your subscription. Please contact Admin@riff-app.co.uk.' });
+    }
   });
 // Mobile payment success page
   app.get('/payment-success', async (request, reply) => {
