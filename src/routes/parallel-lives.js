@@ -1,10 +1,14 @@
 const prisma = require('../db');
 const OpenAI = require('openai').default || require('openai');
 
-const kimi = process.env.MOONSHOT_API_KEY
-  ? new OpenAI({ apiKey: process.env.MOONSHOT_API_KEY, baseURL: 'https://api.moonshot.ai/v1' })
+// gpt-4o-mini, not Kimi: kimi-k2.6 narrates before answering, truncates mid-
+// object, hedges ('or something Manchester-related') and ignores format
+// instructions — roughly 1 usable branch in 3 even with retries and guards.
+// Kimi remains the right choice for the AI companions.
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
-const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
+const PL_MODEL = 'gpt-4o-mini';
 
 // Eight forks. Each is a genuine decision point, which is what makes the
 // branching coherent rather than arbitrary biography.
@@ -70,25 +74,17 @@ function safeJson(text) {
   try { return JSON.parse(t.slice(start, end + 1)); } catch (e) { return null; }
 }
 
-async function askKimi(system, user, maxTokens) {
-  if (!kimi) throw new Error('No MOONSHOT_API_KEY configured');
-  const res = await kimi.chat.completions.create({
-    model: KIMI_MODEL,
-    temperature: 1, // Kimi requires 1
-    max_tokens: Math.min(maxTokens || 2048, 2048),
+async function askModel(system, user, maxTokens) {
+  if (!openai) throw new Error('No OPENAI_API_KEY configured');
+  const res = await openai.chat.completions.create({
+    model: PL_MODEL,
+    temperature: 0.9,
+    max_tokens: maxTokens || 900,
+    response_format: { type: 'json_object' },
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-    // Without this, kimi-k2.6 puts its reasoning in reasoning_content and
-    // leaves content EMPTY. See kimi-bot.js — same requirement there.
-    extra_body: { thinking: { type: 'disabled' } },
   });
-  var msg = res.choices && res.choices[0] ? res.choices[0].message : null;
-  if (!msg) return null;
-  var out = msg.content && msg.content.trim();
-  // kimi-k2.6 often leaves content empty and puts everything in
-  // reasoning_content — narration first, then the JSON. safeJson() below
-  // extracts the outermost {...}, so handing it the whole thing works.
-  if (!out && msg.reasoning_content) out = msg.reasoning_content.trim();
-  return out || null;
+  const msg = res.choices && res.choices[0] ? res.choices[0].message : null;
+  return msg && msg.content ? msg.content.trim() : null;
 }
 
 const BRANCH_SYSTEM = [
@@ -96,30 +92,27 @@ const BRANCH_SYSTEM = [
   'Think superposition — same starting material, a different branch taken.',
   '',
   'Be specific and vivid. Real street-level detail beats grand abstraction.',
+  'Invent concrete particulars: a neighbourhood, a job title, a smell, a habit.',
   'Alternative relationships and family are fair game — a different branch means different people.',
   'But never predict bad outcomes for a real named person from their actual life.',
   'Warm and curious. Never fatalistic, never a judgement on the life they actually chose.',
   'No mysticism, no destiny, no "the universe". A thought experiment, not a prophecy.',
   '',
-  'Reply with exactly nine lines in this shape. Here is a worked example of the',
-  'style and level of detail expected — write your own, do not copy this one:',
+  'Return a JSON object with exactly these keys:',
+  '{"title":"2-5 word concrete noun phrase","divergence":"the decision that went differently, one sentence",',
+  '"year":"the year it diverged","today":"2-3 sentences on their life in this branch now",',
+  '"work":"what they do","place":"where they live","texture":"one sensory detail of an ordinary day",',
+  '"cost":"what they gave up, one sentence","mood":"one of: ember, tide, neon, dust, frost, bloom"}',
   '',
-  'Title: The Rotterdam Drawings',
-  'Divergence: Took the architecture place at Sheffield instead of computer science.',
-  'Year: 2009',
-  'Today: They run a four-person studio in Rotterdam doing social housing competitions. The work is slower and poorer than the life they actually have, but the buildings outlast them. They still cannot walk past scaffolding without stopping.',
-  'Work: Architect, small practice, mostly public commissions',
-  'Place: Rotterdam',
-  'Texture: Tracing paper curling in the radiator heat, coffee going cold on the drawing board.',
-  'Cost: The money, and the friends they would have made in London.',
-  'Mood: dust',
+  'Example of the register expected (write your own, do not reuse this):',
+  '{"title":"The Rotterdam Drawings","divergence":"Took the architecture place at Sheffield instead of computer science.",',
+  '"year":"2009","today":"They run a four-person studio in Rotterdam doing social housing competitions. The work is slower and poorer than the life they actually have, but the buildings outlast them.",',
+  '"work":"Architect, small practice, public commissions","place":"Rotterdam",',
+  '"texture":"Tracing paper curling in the radiator heat, coffee going cold on the drawing board.",',
+  '"cost":"The money, and the friends they would have made in London.","mood":"dust"}',
   '',
-  'Write nothing before or after those nine lines. No preamble, no reasoning, no explanation.',
-  'Title must be 2-5 words, a concrete noun phrase, and nothing else. No brackets,',
-  'no alternatives, no hedging. Good: The Rotterdam Drawings. The Ancoats Mill Flat.',
-  'Bad: The Piccadilly Minutes (or something Manchester-related).',
-  'Every line must contain real invented detail. Never write placeholders like [Something],',
-  '[Year] or [Description], and never leave a line as a question or a list of options.',
+  'Every value must be filled in with real invented detail. No placeholders, no brackets,',
+  'no hedging like "or something similar", no alternatives, no questions.',
 ].join('\n');
 
 const CROSS_SYSTEM = [
@@ -208,7 +201,7 @@ async function parallelRoutes(app) {
     ];
     for (let i = 0; i < FOCUS.length; i++) {
       try {
-        const raw = await askKimi(BRANCH_SYSTEM,
+        const raw = await askModel(BRANCH_SYSTEM,
           'Here is their life, in their own words:\n\n' + lines +
           '\n\nGenerate exactly ONE branch, diverging from ' + FOCUS[i] + '.', 900);
         if (!_dbgRaw) _dbgRaw = raw ? ('len=' + raw.length + ' | ' + String(raw).slice(-400)) : '(empty)';
@@ -216,7 +209,7 @@ async function parallelRoutes(app) {
         // One retry: the model intermittently returns the template rather than
         // filling it in, and a second attempt usually lands.
         if (!b) {
-          const raw2 = await askKimi(BRANCH_SYSTEM,
+          const raw2 = await askModel(BRANCH_SYSTEM,
             'Here is their life, in their own words:\n\n' + lines +
             '\n\nGenerate exactly ONE branch, diverging from ' + FOCUS[i] + '.' +
             '\n\nWrite real invented detail on every line. No placeholders, no square brackets, no reasoning.', 900);
@@ -254,7 +247,7 @@ async function parallelRoutes(app) {
       try {
         const payload = 'PERSON ONE branches:\n' + JSON.stringify(row.branchesA) +
                         '\n\nPERSON TWO branches:\n' + JSON.stringify(row.branchesB);
-        const raw = await askKimi(CROSS_SYSTEM, payload, 1800);
+        const raw = await askModel(CROSS_SYSTEM, payload, 1800);
         const parsed = safeJson(raw);
         if (parsed && Array.isArray(parsed.crossings)) {
           crossings = { crossings: parsed.crossings.slice(0, 4), note: parsed.note || null };
