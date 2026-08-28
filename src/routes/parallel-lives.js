@@ -172,8 +172,8 @@ async function structureBranch(prose, forkYear) {
     '"after":"the years just after, 2-3 sentences",',
     '"led":"the shape my life took, 2-3 sentences",',
     '"today":"an ordinary present-day moment, 2-3 sentences",',
-    '"work":"what I do — may be unpaid or domestic, or empty if this life is not about work",',
-    '"place":"where I live",',
+    '"work":"a SHORT LABEL of 2-5 words, not a sentence (e.g. Architect, small practice). May be unpaid or domestic. Empty if this life is not about work.",',
+    '"place":"a SHORT LABEL of 2-5 words, not a sentence (e.g. Brockley, London).",',
     '"lifeType":"one of: vocation, place, people, pursuit, ordinary",',
     '"cost":"what I gave up, one complete sentence",',
     '"mood":"one of: ember, tide, neon, dust, frost, bloom",',
@@ -275,7 +275,13 @@ var SETTING_HINTS = [
   ['city', ['london','manchester','birmingham','glasgow','leeds','bristol','city','borough','tube','underground']],
 ];
 function deriveSetting(b) {
-  var hay = [b.place, b.today, b.texture, b.led].filter(Boolean).join(' ').toLowerCase();
+  var place = String(b.place || '').toLowerCase();
+  for (var q = 0; q < SETTING_HINTS.length; q++) {
+    for (var w = 0; w < SETTING_HINTS[q][1].length; w++) {
+      if (place.indexOf(SETTING_HINTS[q][1][w]) !== -1) return SETTING_HINTS[q][0];
+    }
+  }
+  var hay = [b.today, b.texture, b.led].filter(Boolean).join(' ').toLowerCase();
   for (var i = 0; i < SETTING_HINTS.length; i++) {
     for (var j = 0; j < SETTING_HINTS[i][1].length; j++) {
       if (hay.indexOf(SETTING_HINTS[i][1][j]) !== -1) return SETTING_HINTS[i][0];
