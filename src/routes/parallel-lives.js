@@ -39,7 +39,7 @@ async function askKimi(system, user, maxTokens) {
   const res = await kimi.chat.completions.create({
     model: KIMI_MODEL,
     temperature: 1, // Kimi requires 1
-    max_tokens: maxTokens || 2048,
+    max_tokens: Math.min(maxTokens || 2048, 2048),
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
   });
   return res.choices && res.choices[0] ? res.choices[0].message.content : null;
@@ -145,7 +145,7 @@ async function parallelRoutes(app) {
 
     let branches = null;
     try {
-      const raw = await askKimi(BRANCH_SYSTEM, 'Here is their life, in their own words:\n\n' + lines + '\n\nGenerate 4 branches.', 2600);
+      const raw = await askKimi(BRANCH_SYSTEM, 'Here is their life, in their own words:\n\n' + lines + '\n\nGenerate 3 branches.', 2048);
       const parsed = safeJson(raw);
       branches = parsed && Array.isArray(parsed.branches) ? parsed.branches.slice(0, 5) : null;
     } catch (err) {
@@ -177,7 +177,7 @@ async function parallelRoutes(app) {
       try {
         const payload = 'PERSON ONE branches:\n' + JSON.stringify(row.branchesA) +
                         '\n\nPERSON TWO branches:\n' + JSON.stringify(row.branchesB);
-        const raw = await askKimi(CROSS_SYSTEM, payload, 2000);
+        const raw = await askKimi(CROSS_SYSTEM, payload, 1800);
         const parsed = safeJson(raw);
         if (parsed && Array.isArray(parsed.crossings)) {
           crossings = { crossings: parsed.crossings.slice(0, 4), note: parsed.note || null };
