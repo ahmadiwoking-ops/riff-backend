@@ -260,7 +260,6 @@ async function parallelRoutes(app) {
     // Generate one branch per call: a single large structured response
     // truncates before the model finishes reasoning.
     let branches = [];
-    let _dbgErr = null, _dbgRaw = null;
     // Deliberately distinct so the three branches do not collapse into one idea.
     const FOCUS = [
       'the education or training path they nearly took instead',
@@ -272,7 +271,6 @@ async function parallelRoutes(app) {
         // Stage one: Kimi writes it as prose (its strength).
         const prose = await writeBranchProse(lines, FOCUS[i]);
         if (!prose) { request.log.warn({ i: i }, 'parallel: no prose from kimi'); continue; }
-        if (!_dbgRaw) _dbgRaw = 'prose len=' + prose.length + ' | ' + prose.slice(0, 200);
         // Stage two: mini structures it (its strength).
         const json = await structureBranch(prose);
         let b = parseBranch(json);
@@ -283,12 +281,11 @@ async function parallelRoutes(app) {
         }
         if (b) branches.push(b);
       } catch (err) {
-        _dbgErr = (err && (err.status ? err.status + ' ' : '') + (err.message || 'unknown'));
         request.log.error(err, 'parallel: branch ' + i + ' failed');
       }
     }
     if (!branches.length) {
-      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.', _debug: { kimiError: _dbgErr, rawStart: _dbgRaw } });
+      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.' });
     }
     branches = branches.map(function (b) {
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
