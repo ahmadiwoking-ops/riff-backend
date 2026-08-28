@@ -38,6 +38,11 @@ const PROMPTS = [
 // carries a mood + era + motif the client renders as gradients and iconography.
 const MOODS = ['ember', 'tide', 'neon', 'dust', 'frost', 'bloom'];
 
+// Fixed set: each maps to an illustration in the app's library. The model must
+// pick one of these, never invent a new one, or the image lookup misses.
+const CATEGORIES = ['craft', 'design', 'food', 'medicine', 'service', 'academic',
+  'stage', 'tech', 'corporate', 'land', 'sea', 'travel', 'care', 'trade', 'solitary'];
+
 // kimi-k2.6 narrates in prose even when told to return JSON, and long
 // structured requests truncate before the object is ever written. So we ask
 // for ONE branch at a time in a simple Key: value shape and parse that.
@@ -46,7 +51,7 @@ function parseBranch(text) {
   var j = safeJson(text);
   if (j && j.title) return j;
   var out = {};
-  var keys = ['title','divergence','year','moment','after','led','today','work','place','texture','cost','mood'];
+  var keys = ['title','divergence','year','moment','after','led','today','work','place','texture','cost','mood','category'];
   String(text).split(/\r?\n/).forEach(function (line) {
     var m = line.match(/^\s*[-*]?\s*([A-Za-z ]+)\s*:\s*(.+)$/);
     if (!m) return;
@@ -137,7 +142,16 @@ async function structureBranch(prose) {
     '"today":"beat 4 — an ordinary present-day moment, 2-3 sentences",',
     '"work":"my job","place":"where I live",',
     '"cost":"what I gave up, one complete sentence",',
-    '"mood":"one of: ember, tide, neon, dust, frost, bloom"}',
+    '"mood":"one of: ember, tide, neon, dust, frost, bloom",',
+    '"category":"one of: craft, design, food, medicine, service, academic, stage, tech,',
+    'corporate, land, sea, travel, care, trade, solitary"}',
+    'category: whichever best describes the WORK or shape of this life. craft=making things',
+    'by hand, design=architecture and design, food=cooking and hospitality, medicine=health',
+    'and animals, service=police fire teaching social work, academic=research and teaching at',
+    'a university, stage=music acting writing performing, tech=software and startups,',
+    'corporate=office and management, land=farming and outdoors, sea=coastal and sailing,',
+    'travel=nomadic and guiding, care=family and community, trade=building and mechanics,',
+    'solitary=remote or off-grid. Pick the closest — never invent a new one.',
     'mood: ember=warm and driven, tide=steady and calm, neon=fast and urban,',
     'dust=quiet and craft-like, frost=austere or solitary, bloom=growing and hopeful.',
     'Do not default to bloom. Never truncate a sentence mid-clause. No placeholders,',
@@ -274,10 +288,13 @@ async function parallelRoutes(app) {
     // truncates before the model finishes reasoning.
     let branches = [];
     // Deliberately distinct so the three branches do not collapse into one idea.
+    // Five distinct forks so the set feels worth browsing.
     const FOCUS = [
       'the education or training path they nearly took instead',
       'the place they did not move to, or the move they did not make',
       'the professional risk they talked themselves out of taking',
+      'the opportunity or offer they turned down',
+      'the person or relationship that redirected them, going the other way',
     ];
     // The three branches are independent, so generate them concurrently.
     // Sequentially this was six model calls back to back and ran past three
@@ -295,7 +312,11 @@ async function parallelRoutes(app) {
         return null;
       }
     }));
-    branches = settled.filter(Boolean);
+    branches = settled.filter(Boolean).map(function (b) {
+      if (!b.category || CATEGORIES.indexOf(b.category) === -1) b.category = 'tech';
+      if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
+      return b;
+    });
     if (!branches.length) {
       return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.' });
     }
