@@ -123,7 +123,11 @@ async function structureBranch(prose) {
     '"year":"the year","today":"2-3 sentences on their life now","work":"job","place":"where",',
     '"texture":"one sensory detail","cost":"what they gave up, one sentence",',
     '"mood":"one of: ember, tide, neon, dust, frost, bloom"}',
-    'Keep the writer\'s own phrasing and specific details wherever you can.',
+    'Keep the writer\'s own phrasing and specific details wherever you can — quote them.',
+    'year: a four-digit year, the year the DECISION was made, not today. Never a phrase.',
+    'mood: pick the one that genuinely fits this life. ember=warm and driven, tide=steady and',
+    'calm, neon=fast and urban, dust=quiet and craft-like, frost=austere or solitary,',
+    'bloom=growing and hopeful. Do not default to bloom.',
     'No placeholders, no brackets, no hedging, no alternatives.',
   ].join('\n');
   const res = await openai.chat.completions.create({
@@ -257,10 +261,11 @@ async function parallelRoutes(app) {
     // truncates before the model finishes reasoning.
     let branches = [];
     let _dbgErr = null, _dbgRaw = null;
+    // Deliberately distinct so the three branches do not collapse into one idea.
     const FOCUS = [
-      'the path they nearly took instead of what they studied',
-      'the opportunity they turned down or walked away from',
-      'the risk they did not take',
+      'the education or training path they nearly took instead',
+      'the place they did not move to, or the move they did not make',
+      'the professional risk they talked themselves out of taking',
     ];
     for (let i = 0; i < FOCUS.length; i++) {
       try {
