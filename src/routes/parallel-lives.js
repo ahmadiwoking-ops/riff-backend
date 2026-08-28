@@ -381,7 +381,15 @@ async function parallelRoutes(app) {
         return null;
       }
     }));
-    branches = settled.filter(Boolean).map(function (b) {
+    // With sparse answers every focus can collapse onto the same fork, giving
+    // five versions of one life. Drop near-duplicates rather than showing them.
+    var seenTitles = {};
+    branches = settled.filter(Boolean).filter(function (b) {
+      var key = String(b.title || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 14);
+      if (seenTitles[key]) return false;
+      seenTitles[key] = true;
+      return true;
+    }).map(function (b) {
       // The model ignores a 50-item list buried in a prompt, so derive the
       // category from the `work` and `place` text it does produce reliably.
       if (!b.category || CATEGORIES.indexOf(b.category) === -1) b.category = deriveCategory(b);
