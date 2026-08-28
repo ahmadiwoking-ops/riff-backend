@@ -41,8 +41,16 @@ async function askKimi(system, user, maxTokens) {
     temperature: 1, // Kimi requires 1
     max_tokens: Math.min(maxTokens || 2048, 2048),
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    // Without this, kimi-k2.6 puts its reasoning in reasoning_content and
+    // leaves content EMPTY. See kimi-bot.js — same requirement there.
+    extra_body: { thinking: { type: 'disabled' } },
   });
-  return res.choices && res.choices[0] ? res.choices[0].message.content : null;
+  var msg = res.choices && res.choices[0] ? res.choices[0].message : null;
+  if (!msg) return null;
+  var out = msg.content && msg.content.trim();
+  // Fallback: if content is still empty, the JSON may be inside reasoning_content.
+  if (!out && msg.reasoning_content) out = msg.reasoning_content.trim();
+  return out || null;
 }
 
 const BRANCH_SYSTEM = [
