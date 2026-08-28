@@ -10,6 +10,17 @@ const openai = process.env.OPENAI_API_KEY
   : null;
 const PL_MODEL = 'gpt-4o-mini';
 
+// Two-stage generation. kimi-k2.6 CANNOT return structured output: it reasons
+// until the token budget is gone and never starts the answer — content is
+// always empty, finish_reason always 'length', even with thinking disabled,
+// JSON mode, or an assistant prefill (all three tested). But its prose is far
+// better than mini's. So: Kimi writes the life as free text (read out of
+// reasoning_content, which is where everything lands), then mini structures it.
+const kimi = process.env.MOONSHOT_API_KEY
+  ? new OpenAI({ apiKey: process.env.MOONSHOT_API_KEY, baseURL: 'https://api.moonshot.ai/v1' })
+  : null;
+const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
+
 // Eight forks. Each is a genuine decision point, which is what makes the
 // branching coherent rather than arbitrary biography.
 const PROMPTS = [
@@ -72,6 +83,58 @@ function safeJson(text) {
   const end = t.lastIndexOf('}');
   if (start === -1 || end === -1) return null;
   try { return JSON.parse(t.slice(start, end + 1)); } catch (e) { return null; }
+}
+
+// Stage one: Kimi, free prose. No format demands — that is what breaks it.
+async function writeBranchProse(lifeLines, focus) {
+  if (!kimi) return null;
+  const system = [
+    'You imagine a parallel life: the same real person, but one decision went differently.',
+    'Write it as a short vivid paragraph. Be specific — a neighbourhood, a job, a smell, a habit.',
+    'Say what they gave up for it. Warm and curious, never fatalistic, never a judgement on',
+    'the life they actually chose. No mysticism, no destiny. Alternative relationships are',
+    'fine, but never predict bad outcomes for a real named person from their actual life.',
+  ].join('\n');
+  const res = await kimi.chat.completions.create({
+    model: KIMI_MODEL,
+    temperature: 1,
+    max_tokens: 2048,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: 'Their life, in their own words:\n\n' + lifeLines +
+        '\n\nWrite ONE parallel life, diverging from ' + focus + '.' },
+    ],
+  });
+  const msg = res.choices && res.choices[0] ? res.choices[0].message : null;
+  if (!msg) return null;
+  // content is reliably empty on this model; the writing is in reasoning_content.
+  return (msg.content && msg.content.trim()) || (msg.reasoning_content && msg.reasoning_content.trim()) || null;
+}
+
+// Stage two: mini turns that prose into the fields. Trivial extraction task.
+async function structureBranch(prose) {
+  if (!openai || !prose) return null;
+  const system = [
+    'You are given a writer\'s notes describing one parallel life. The notes may include',
+    'false starts, deliberation or several attempts. Take the BEST, most complete version',
+    'described and express it as JSON. Do not invent new facts; use what is there.',
+    'Return exactly these keys:',
+    '{"title":"2-5 word noun phrase","divergence":"the decision that went differently, one sentence",',
+    '"year":"the year","today":"2-3 sentences on their life now","work":"job","place":"where",',
+    '"texture":"one sensory detail","cost":"what they gave up, one sentence",',
+    '"mood":"one of: ember, tide, neon, dust, frost, bloom"}',
+    'Keep the writer\'s own phrasing and specific details wherever you can.',
+    'No placeholders, no brackets, no hedging, no alternatives.',
+  ].join('\n');
+  const res = await openai.chat.completions.create({
+    model: PL_MODEL,
+    temperature: 0.3,
+    max_tokens: 700,
+    response_format: { type: 'json_object' },
+    messages: [{ role: 'system', content: system }, { role: 'user', content: prose.slice(0, 6000) }],
+  });
+  const msg = res.choices && res.choices[0] ? res.choices[0].message : null;
+  return msg && msg.content ? msg.content.trim() : null;
 }
 
 async function askModel(system, user, maxTokens) {
@@ -201,19 +264,17 @@ async function parallelRoutes(app) {
     ];
     for (let i = 0; i < FOCUS.length; i++) {
       try {
-        const raw = await askModel(BRANCH_SYSTEM,
-          'Here is their life, in their own words:\n\n' + lines +
-          '\n\nGenerate exactly ONE branch, diverging from ' + FOCUS[i] + '.', 900);
-        if (!_dbgRaw) _dbgRaw = raw ? ('len=' + raw.length + ' | ' + String(raw).slice(-400)) : '(empty)';
-        let b = parseBranch(raw);
-        // One retry: the model intermittently returns the template rather than
-        // filling it in, and a second attempt usually lands.
+        // Stage one: Kimi writes it as prose (its strength).
+        const prose = await writeBranchProse(lines, FOCUS[i]);
+        if (!prose) { request.log.warn({ i: i }, 'parallel: no prose from kimi'); continue; }
+        if (!_dbgRaw) _dbgRaw = 'prose len=' + prose.length + ' | ' + prose.slice(0, 200);
+        // Stage two: mini structures it (its strength).
+        const json = await structureBranch(prose);
+        let b = parseBranch(json);
         if (!b) {
-          const raw2 = await askModel(BRANCH_SYSTEM,
-            'Here is their life, in their own words:\n\n' + lines +
-            '\n\nGenerate exactly ONE branch, diverging from ' + FOCUS[i] + '.' +
-            '\n\nWrite real invented detail on every line. No placeholders, no square brackets, no reasoning.', 900);
-          b = parseBranch(raw2);
+          // One retry of the structuring step only — the prose is usually fine.
+          const json2 = await structureBranch(prose);
+          b = parseBranch(json2);
         }
         if (b) branches.push(b);
       } catch (err) {
