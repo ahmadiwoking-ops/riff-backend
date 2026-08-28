@@ -330,6 +330,29 @@ model Block {
   @@index([blockedId])
 }
 
+// Parallel Lives — one record per connection. Each person's answers and
+// generated branches are stored separately so someone can see their own
+// branches before their partner has finished; crossings are generated once
+// both sides exist.
+model ParallelLives {
+  id            String   @id @default(cuid())
+  connectionId  String   @unique
+  userAId       String
+  userBId       String
+  answersA      Json?
+  answersB      Json?
+  branchesA     Json?
+  branchesB     Json?
+  crossings     Json?
+  regensA       Int      @default(0)
+  regensB       Int      @default(0)
+  crossedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([userAId])
+  @@index([userBId])
+}
+
 model Notification {
   id        String   @id @default(cuid())
   userId    String
