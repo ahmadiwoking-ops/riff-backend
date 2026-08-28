@@ -134,8 +134,12 @@ async function structureBranch(prose) {
   if (!openai || !prose) return null;
   const system = [
     'You are given a writer\'s notes describing one parallel life, told in first person.',
-    'The notes may include false starts or several attempts. Take the BEST, most complete',
-    'version and express it as JSON. Do not invent new facts; use what is there.',
+    'The notes often contain SEVERAL COMPETING DRAFTS of the same life. Choose the ONE',
+    'most complete draft and use only that draft. Never combine details from different',
+    'drafts — mixing them produces a life that contradicts itself (a media career reached',
+    'through an IT degree, and so on). If two drafts disagree about what they studied,',
+    'where they live or what they do, pick one draft and discard the other entirely.',
+    'Do not invent new facts; use only what is in the draft you chose.',
     'Keep the writer\'s own phrasing and specific details — quote them wherever you can.',
     'Keep everything in FIRST PERSON ("I"), exactly as written.',
     'Return exactly these keys:',
@@ -370,6 +374,7 @@ async function parallelRoutes(app) {
       try {
         const prose = await writeBranchProse(lines, focus);   // Kimi: the writing
         if (!prose) { request.log.warn({ i: i }, 'parallel: no prose'); return null; }
+        request.log.warn({ focus: focus, prose: String(prose).slice(0, 1500) }, 'PL_PROSE');
         const json = await structureBranch(prose);            // mini: the fields
         let b = parseBranch(json);
         if (!b) { b = parseBranch(await structureBranch(prose)); }  // one retry of structuring only
