@@ -382,6 +382,7 @@ async function parallelRoutes(app) {
         if (!b) { b = parseBranch(await structureBranch(prose)); }  // one retry of structuring only
         return b;
       } catch (err) {
+        if (!_sample) _sample = { err: (err && (err.message || String(err))), at: (err && err.stack ? err.stack.split('\n')[1] : '') };
         request.log.error(err, 'parallel: branch ' + i + ' failed');
         return null;
       }
