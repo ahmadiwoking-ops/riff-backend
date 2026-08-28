@@ -235,6 +235,27 @@ const CROSS_SYSTEM = [
   '"odds":"a plain-language sense of how likely, one line"}],"note":"one line overview, or an honest note if they rarely cross"}',
 ].join('\n');
 
+// Where the life ends up — the story opens on the work and closes on the place.
+// Coast/countryside are checked before city so a cottage by a firth does not
+// match on a stray urban word.
+var SETTING_HINTS = [
+  ['coast', ['coast','harbour','harbor','seaside','fishing village','estuary','firth','beach','island']],
+  ['countryside', ['countryside','village','farm','fields','hills','moor','valley','rural','woods','forest','smallholding','cottage']],
+  ['abroad', ['berlin','paris','lisbon','rotterdam','amsterdam','barcelona','madrid','tokyo','new york','toronto','sydney','abroad','overseas','expat']],
+  ['home', ['kitchen table','front room','living room','at the table']],
+  ['town', ['market town','suburb','woking','guildford','high street']],
+  ['city', ['london','manchester','birmingham','glasgow','leeds','bristol','city','borough','tube','underground']],
+];
+function deriveSetting(b) {
+  var hay = [b.place, b.today, b.texture, b.led].filter(Boolean).join(' ').toLowerCase();
+  for (var i = 0; i < SETTING_HINTS.length; i++) {
+    for (var j = 0; j < SETTING_HINTS[i][1].length; j++) {
+      if (hay.indexOf(SETTING_HINTS[i][1][j]) !== -1) return SETTING_HINTS[i][0];
+    }
+  }
+  return 'city';
+}
+
 var CATEGORY_HINTS = [
   ['carpenter', ['carpenter','joiner','woodwork','cabinet']],
   ['potter', ['potter','ceramic','pottery','kiln']],
@@ -287,11 +308,18 @@ var CATEGORY_HINTS = [
   ['maker', ['maker','workshop','hand-built','craftsman']],
 ];
 function deriveCategory(b) {
-  var hay = [b.work, b.title, b.place, b.led].filter(Boolean).join(' ').toLowerCase();
+  var primary = String(b.work || '').toLowerCase();
+  var hay = primary;
+  var pass2 = [b.title, b.place, b.led].filter(Boolean).join(' ').toLowerCase();
   for (var i = 0; i < CATEGORY_HINTS.length; i++) {
     var key = CATEGORY_HINTS[i][0], words = CATEGORY_HINTS[i][1];
     for (var j = 0; j < words.length; j++) {
       if (hay.indexOf(words[j]) !== -1) return key;
+    }
+  }
+  for (var a = 0; a < CATEGORY_HINTS.length; a++) {
+    for (var b2 = 0; b2 < CATEGORY_HINTS[a][1].length; b2++) {
+      if (pass2.indexOf(CATEGORY_HINTS[a][1][b2]) !== -1) return CATEGORY_HINTS[a][0];
     }
   }
   return 'office_professional';
@@ -397,6 +425,7 @@ async function parallelRoutes(app) {
       // category from the `work` and `place` text it does produce reliably.
       if (!b.category || CATEGORIES.indexOf(b.category) === -1) b.category = deriveCategory(b);
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
+      b.setting = deriveSetting(b);
       return b;
     });
     if (!branches.length) {
