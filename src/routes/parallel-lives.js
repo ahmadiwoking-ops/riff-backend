@@ -52,6 +52,8 @@ function parseBranch(text) {
   // Reject bracketed placeholders — the model sometimes returns the template
   // itself: '[Something]', '[Year]', '[Specific decision]'.
   if (/\[[^\]]+\]/.test(vals)) return null;
+  // Reject hedging: '(or something Manchester-related)', 'maybe', "let's say".
+  if (/\(or something|\bmaybe\b|let'?s say|something evocative|or similar\)/i.test(vals)) return null;
   // Reject unfilled filler that trails off into questions.
   if (/\?\s*(the|specific)/i.test(out.cost || '')) return null;
   return out;
@@ -113,6 +115,9 @@ const BRANCH_SYSTEM = [
   'Mood: dust',
   '',
   'Write nothing before or after those nine lines. No preamble, no reasoning, no explanation.',
+  'Title must be 2-5 words, a concrete noun phrase, and nothing else. No brackets,',
+  'no alternatives, no hedging. Good: The Rotterdam Drawings. The Ancoats Mill Flat.',
+  'Bad: The Piccadilly Minutes (or something Manchester-related).',
   'Every line must contain real invented detail. Never write placeholders like [Something],',
   '[Year] or [Description], and never leave a line as a question or a list of options.',
 ].join('\n');
