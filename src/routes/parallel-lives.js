@@ -46,7 +46,7 @@ function parseBranch(text) {
   var j = safeJson(text);
   if (j && j.title) return j;
   var out = {};
-  var keys = ['title','divergence','year','today','work','place','texture','cost','mood'];
+  var keys = ['title','divergence','year','moment','after','led','today','work','place','texture','cost','mood'];
   String(text).split(/\r?\n/).forEach(function (line) {
     var m = line.match(/^\s*[-*]?\s*([A-Za-z ]+)\s*:\s*(.+)$/);
     if (!m) return;
@@ -90,11 +90,19 @@ async function writeBranchProse(lifeLines, focus) {
   if (!kimi) return null;
   const system = [
     'You imagine a parallel life: the same real person, but one decision went differently.',
-    'Write it as a short vivid paragraph. Be specific — a neighbourhood, a job, a smell, a habit.',
-    'Say what they gave up for it. Warm and curious, never fatalistic, never a judgement on',
-    'the life they actually chose. No mysticism, no destiny. Alternative relationships are',
-    'fine, but never predict bad outcomes for a real named person from their actual life.',
-  ].join('\n');
+    'Write it in FIRST PERSON, as that person looking back. Use "I", never "they".',
+    '',
+    'Tell it as four beats, in order:',
+    '1. THE MOMENT — the decision itself, the day it turned. Concrete: a room, a letter, a phone call.',
+    '2. THE YEARS AFTER — what the first few years looked like. What was hard, what surprised me.',
+    '3. WHERE IT LED — the shape my life took. Work, people, the place I ended up.',
+    '4. TODAY — an ordinary present-day moment, in sensory detail. What I can smell, hear, see right now.',
+    '',
+    'Two or three sentences per beat. Be specific — a neighbourhood, a job, a smell, a habit.',
+    'Say plainly what I gave up for this life. Warm and curious, never fatalistic, never a',
+    'judgement on the life I actually chose. No mysticism, no destiny. Alternative relationships',
+    'are fine, but never predict bad outcomes for a real named person from my actual life.',
+].join('\n');
   const res = await kimi.chat.completions.create({
     model: KIMI_MODEL,
     temperature: 1,
@@ -115,25 +123,30 @@ async function writeBranchProse(lifeLines, focus) {
 async function structureBranch(prose) {
   if (!openai || !prose) return null;
   const system = [
-    'You are given a writer\'s notes describing one parallel life. The notes may include',
-    'false starts, deliberation or several attempts. Take the BEST, most complete version',
-    'described and express it as JSON. Do not invent new facts; use what is there.',
+    'You are given a writer\'s notes describing one parallel life, told in first person.',
+    'The notes may include false starts or several attempts. Take the BEST, most complete',
+    'version and express it as JSON. Do not invent new facts; use what is there.',
+    'Keep the writer\'s own phrasing and specific details — quote them wherever you can.',
+    'Keep everything in FIRST PERSON ("I"), exactly as written.',
     'Return exactly these keys:',
-    '{"title":"2-5 word noun phrase","divergence":"the decision that went differently, one sentence",',
-    '"year":"the year","today":"2-3 sentences on their life now","work":"job","place":"where",',
-    '"texture":"one sensory detail","cost":"what they gave up, one sentence",',
+    '{"title":"2-5 word noun phrase","divergence":"the decision that went differently, ONE complete sentence",',
+    '"year":"four-digit year the decision was made",',
+    '"moment":"beat 1 — the day it turned, 2-3 sentences",',
+    '"after":"beat 2 — the years just after, 2-3 sentences",',
+    '"led":"beat 3 — the shape my life took, 2-3 sentences",',
+    '"today":"beat 4 — an ordinary present-day moment, 2-3 sentences",',
+    '"work":"my job","place":"where I live",',
+    '"cost":"what I gave up, one complete sentence",',
     '"mood":"one of: ember, tide, neon, dust, frost, bloom"}',
-    'Keep the writer\'s own phrasing and specific details wherever you can — quote them.',
-    'year: a four-digit year, the year the DECISION was made, not today. Never a phrase.',
-    'mood: pick the one that genuinely fits this life. ember=warm and driven, tide=steady and',
-    'calm, neon=fast and urban, dust=quiet and craft-like, frost=austere or solitary,',
-    'bloom=growing and hopeful. Do not default to bloom.',
-    'No placeholders, no brackets, no hedging, no alternatives.',
-  ].join('\n');
+    'mood: ember=warm and driven, tide=steady and calm, neon=fast and urban,',
+    'dust=quiet and craft-like, frost=austere or solitary, bloom=growing and hopeful.',
+    'Do not default to bloom. Never truncate a sentence mid-clause. No placeholders,',
+    'no brackets, no hedging, no alternatives.',
+].join('\n');
   const res = await openai.chat.completions.create({
     model: PL_MODEL,
     temperature: 0.3,
-    max_tokens: 700,
+    max_tokens: 1100,
     response_format: { type: 'json_object' },
     messages: [{ role: 'system', content: system }, { role: 'user', content: prose.slice(0, 6000) }],
   });
