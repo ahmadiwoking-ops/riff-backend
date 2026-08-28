@@ -266,24 +266,23 @@ async function parallelRoutes(app) {
       'the place they did not move to, or the move they did not make',
       'the professional risk they talked themselves out of taking',
     ];
-    for (let i = 0; i < FOCUS.length; i++) {
+    // The three branches are independent, so generate them concurrently.
+    // Sequentially this was six model calls back to back and ran past three
+    // minutes; in parallel it is bounded by the slowest single branch.
+    const settled = await Promise.all(FOCUS.map(async function (focus, i) {
       try {
-        // Stage one: Kimi writes it as prose (its strength).
-        const prose = await writeBranchProse(lines, FOCUS[i]);
-        if (!prose) { request.log.warn({ i: i }, 'parallel: no prose from kimi'); continue; }
-        // Stage two: mini structures it (its strength).
-        const json = await structureBranch(prose);
+        const prose = await writeBranchProse(lines, focus);   // Kimi: the writing
+        if (!prose) { request.log.warn({ i: i }, 'parallel: no prose'); return null; }
+        const json = await structureBranch(prose);            // mini: the fields
         let b = parseBranch(json);
-        if (!b) {
-          // One retry of the structuring step only — the prose is usually fine.
-          const json2 = await structureBranch(prose);
-          b = parseBranch(json2);
-        }
-        if (b) branches.push(b);
+        if (!b) { b = parseBranch(await structureBranch(prose)); }  // one retry of structuring only
+        return b;
       } catch (err) {
         request.log.error(err, 'parallel: branch ' + i + ' failed');
+        return null;
       }
-    }
+    }));
+    branches = settled.filter(Boolean);
     if (!branches.length) {
       return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.' });
     }
