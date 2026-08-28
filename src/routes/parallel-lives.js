@@ -370,12 +370,14 @@ async function parallelRoutes(app) {
     // The three branches are independent, so generate them concurrently.
     // Sequentially this was six model calls back to back and ran past three
     // minutes; in parallel it is bounded by the slowest single branch.
+    let _sample = null;
     const settled = await Promise.all(FOCUS.map(async function (focus, i) {
       try {
         const prose = await writeBranchProse(lines, focus);   // Kimi: the writing
         if (!prose) { request.log.warn({ i: i }, 'parallel: no prose'); return null; }
         request.log.warn({ focus: focus, prose: String(prose).slice(0, 1500) }, 'PL_PROSE');
         const json = await structureBranch(prose);            // mini: the fields
+        if (i === 0) { _sample = { prose: String(prose).slice(0,300), json: String(json).slice(0,600) }; }
         let b = parseBranch(json);
         if (!b) { b = parseBranch(await structureBranch(prose)); }  // one retry of structuring only
         return b;
@@ -401,7 +403,7 @@ async function parallelRoutes(app) {
       return b;
     });
     if (!branches.length) {
-      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.', _n: { parsed: (typeof _rawCount === 'number' ? _rawCount : -1), afterDedupe: branches.length } });
+      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.', _n: { parsed: (typeof _rawCount === 'number' ? _rawCount : -1), afterDedupe: branches.length }, _s: _sample });
     }
     branches = branches.map(function (b) {
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
