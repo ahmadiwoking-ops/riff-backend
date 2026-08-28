@@ -55,7 +55,6 @@ async function start() {
   app.register(require('./routes/genie'), { prefix: '/api/genie' });
   app.register(require('./routes/safety'), { prefix: '/api/safety' });
   app.register(require('./routes/parallel-lives'), { prefix: '/api/parallel-lives' });
-  app.register(require('./routes/kimi-diag'), { prefix: '/api/diag' }); // TEMPORARY
 
   io.on('connection', (socket) => {
     socket.on('join:connection', (id) => socket.join('connection:' + id));
