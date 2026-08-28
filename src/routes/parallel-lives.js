@@ -43,6 +43,12 @@ function parseBranch(text) {
   var echoes = /^(a )?\d[-–]\d (words?|sentences?)|^one line$|^approx|^the decision that|^what they (do|gave up)$/i;
   if (!out.title || !out.today) return null;
   if (echoes.test(out.title) || echoes.test(out.today) || echoes.test(out.divergence || '')) return null;
+  // Reject reasoning leakage — the model sometimes thinks aloud into a field
+  // ('Need a vivid scene', "Let's think", 'I should make it sound...').
+  var thinking = /\b(need a |let'?s think|i should|maybe they|since (they|no)|presumably|or something evocative|explores that)\b/i;
+  var vals = [out.title, out.today, out.divergence, out.cost].filter(Boolean).join(' ');
+  if (thinking.test(vals)) return null;
+  if (out.title && out.title.length > 60) return null;
   return out;
 }
 
