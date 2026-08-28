@@ -44,13 +44,14 @@ async function askKimi(system, user, maxTokens) {
     // Without this, kimi-k2.6 puts its reasoning in reasoning_content and
     // leaves content EMPTY. See kimi-bot.js — same requirement there.
     extra_body: { thinking: { type: 'disabled' } },
-    response_format: { type: 'json_object' },
   });
   var msg = res.choices && res.choices[0] ? res.choices[0].message : null;
   if (!msg) return null;
   var out = msg.content && msg.content.trim();
-  // Deliberately NO reasoning_content fallback: that field holds the model
-  // thinking aloud, not the answer, and parsing it yields narration not JSON.
+  // kimi-k2.6 often leaves content empty and puts everything in
+  // reasoning_content — narration first, then the JSON. safeJson() below
+  // extracts the outermost {...}, so handing it the whole thing works.
+  if (!out && msg.reasoning_content) out = msg.reasoning_content.trim();
   return out || null;
 }
 
@@ -156,7 +157,7 @@ async function parallelRoutes(app) {
     let _dbgErr = null, _dbgRaw = null;
     try {
       const raw = await askKimi(BRANCH_SYSTEM, 'Here is their life, in their own words:\n\n' + lines + '\n\nGenerate 3 branches.', 2048);
-      _dbgRaw = raw ? String(raw).slice(0, 500) : '(empty)';
+      _dbgRaw = raw ? ('len=' + raw.length + ' | TAIL: ' + String(raw).slice(-600)) : '(empty)';
       const parsed = safeJson(raw);
       branches = parsed && Array.isArray(parsed.branches) ? parsed.branches.slice(0, 5) : null;
     } catch (err) {
