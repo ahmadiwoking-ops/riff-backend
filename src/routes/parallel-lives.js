@@ -386,6 +386,7 @@ async function parallelRoutes(app) {
     }));
     // With sparse answers every focus can collapse onto the same fork, giving
     // five versions of one life. Drop near-duplicates rather than showing them.
+    var _rawCount = settled.filter(Boolean).length;
     var seenTitles = {};
     branches = settled.filter(Boolean).filter(function (b) {
       var key = String(b.title || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 14);
@@ -400,7 +401,7 @@ async function parallelRoutes(app) {
       return b;
     });
     if (!branches.length) {
-      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.' });
+      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.', _n: { parsed: (typeof _rawCount === 'number' ? _rawCount : -1), afterDedupe: branches.length } });
     }
     branches = branches.map(function (b) {
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
