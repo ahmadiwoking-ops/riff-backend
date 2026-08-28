@@ -144,15 +144,18 @@ async function parallelRoutes(app) {
     if (!lines) return reply.code(400).send({ error: 'Please answer at least a few of the prompts' });
 
     let branches = null;
+    let _dbgErr = null, _dbgRaw = null;
     try {
       const raw = await askKimi(BRANCH_SYSTEM, 'Here is their life, in their own words:\n\n' + lines + '\n\nGenerate 3 branches.', 2048);
+      _dbgRaw = raw ? String(raw).slice(0, 500) : '(empty)';
       const parsed = safeJson(raw);
       branches = parsed && Array.isArray(parsed.branches) ? parsed.branches.slice(0, 5) : null;
     } catch (err) {
+      _dbgErr = (err && (err.status ? err.status + ' ' : '') + (err.message || 'unknown'));
       request.log.error(err, 'parallel: branch generation failed');
     }
     if (!branches || !branches.length) {
-      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.' });
+      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.', _debug: { kimiError: _dbgErr, rawStart: _dbgRaw } });
     }
     branches = branches.map(function (b) {
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
