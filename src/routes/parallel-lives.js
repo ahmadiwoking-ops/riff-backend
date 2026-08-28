@@ -23,6 +23,24 @@ const PROMPTS = [
 // carries a mood + era + motif the client renders as gradients and iconography.
 const MOODS = ['ember', 'tide', 'neon', 'dust', 'frost', 'bloom'];
 
+// kimi-k2.6 narrates in prose even when told to return JSON, and long
+// structured requests truncate before the object is ever written. So we ask
+// for ONE branch at a time in a simple Key: value shape and parse that.
+function parseBranch(text) {
+  if (!text) return null;
+  var j = safeJson(text);
+  if (j && j.title) return j;
+  var out = {};
+  var keys = ['title','divergence','year','today','work','place','texture','cost','mood'];
+  String(text).split(/\r?\n/).forEach(function (line) {
+    var m = line.match(/^\s*[-*]?\s*([A-Za-z ]+)\s*:\s*(.+)$/);
+    if (!m) return;
+    var k = m[1].trim().toLowerCase().replace(/\s+/g, '');
+    if (keys.indexOf(k) !== -1 && !out[k]) out[k] = m[2].trim().replace(/\.$/, '');
+  });
+  return out.title && out.today ? out : null;
+}
+
 function safeJson(text) {
   if (!text) return null;
   let t = String(text).trim();
@@ -71,11 +89,17 @@ const BRANCH_SYSTEM = [
   '- Keep it warm and curious, never fatalistic or a judgement on the life they actually chose.',
   '- No mysticism, no destiny, no "the universe". This is a thought experiment, not a prophecy.',
   '',
-  'Return ONLY valid JSON, no prose, no code fences:',
-  '{"branches":[{"title":"3-5 word name for this life","divergence":"the decision that went differently, one line",',
-  '"year":"approx year it diverged","today":"2-3 sentences on their life in this branch now",',
-  '"work":"what they do","place":"where they are","texture":"one sensory detail of an ordinary day there",',
-  '"cost":"what they gave up in this branch, one line","mood":"one of: ember, tide, neon, dust, frost, bloom"}]}',
+  'Output format — use exactly these labels, one per line, nothing else:',
+  'Title: a 3-5 word name for this life',
+  'Divergence: the decision that went differently, one line',
+  'Year: the approximate year it diverged',
+  'Today: 2-3 sentences on their life in this branch now',
+  'Work: what they do',
+  'Place: where they are',
+  'Texture: one sensory detail of an ordinary day there',
+  'Cost: what they gave up, one line',
+  'Mood: one of ember, tide, neon, dust, frost, bloom',
+  'Do not write anything before or after those lines. Do not explain your reasoning.',
 ].join('\n');
 
 const CROSS_SYSTEM = [
@@ -153,18 +177,29 @@ async function parallelRoutes(app) {
     }).filter(Boolean).join('\n\n');
     if (!lines) return reply.code(400).send({ error: 'Please answer at least a few of the prompts' });
 
-    let branches = null;
+    // Generate one branch per call: a single large structured response
+    // truncates before the model finishes reasoning.
+    let branches = [];
     let _dbgErr = null, _dbgRaw = null;
-    try {
-      const raw = await askKimi(BRANCH_SYSTEM, 'Here is their life, in their own words:\n\n' + lines + '\n\nGenerate 3 branches.', 2048);
-      _dbgRaw = raw ? ('len=' + raw.length + ' | TAIL: ' + String(raw).slice(-600)) : '(empty)';
-      const parsed = safeJson(raw);
-      branches = parsed && Array.isArray(parsed.branches) ? parsed.branches.slice(0, 5) : null;
-    } catch (err) {
-      _dbgErr = (err && (err.status ? err.status + ' ' : '') + (err.message || 'unknown'));
-      request.log.error(err, 'parallel: branch generation failed');
+    const FOCUS = [
+      'the path they nearly took instead of what they studied',
+      'the opportunity they turned down or walked away from',
+      'the risk they did not take',
+    ];
+    for (let i = 0; i < FOCUS.length; i++) {
+      try {
+        const raw = await askKimi(BRANCH_SYSTEM,
+          'Here is their life, in their own words:\n\n' + lines +
+          '\n\nGenerate exactly ONE branch, diverging from ' + FOCUS[i] + '.', 900);
+        if (!_dbgRaw) _dbgRaw = raw ? ('len=' + raw.length + ' | ' + String(raw).slice(-400)) : '(empty)';
+        const b = parseBranch(raw);
+        if (b) branches.push(b);
+      } catch (err) {
+        _dbgErr = (err && (err.status ? err.status + ' ' : '') + (err.message || 'unknown'));
+        request.log.error(err, 'parallel: branch ' + i + ' failed');
+      }
     }
-    if (!branches || !branches.length) {
+    if (!branches.length) {
       return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.', _debug: { kimiError: _dbgErr, rawStart: _dbgRaw } });
     }
     branches = branches.map(function (b) {
