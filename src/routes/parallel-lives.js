@@ -38,7 +38,12 @@ function parseBranch(text) {
     var k = m[1].trim().toLowerCase().replace(/\s+/g, '');
     if (keys.indexOf(k) !== -1 && !out[k]) out[k] = m[2].trim().replace(/\.$/, '');
   });
-  return out.title && out.today ? out : null;
+  // Reject template echoes — the model sometimes repeats the field description
+  // instead of filling it in ('3-5 words', 'one line', '2-3 sentences').
+  var echoes = /^(a )?\d[-–]\d (words?|sentences?)|^one line$|^approx|^the decision that|^what they (do|gave up)$/i;
+  if (!out.title || !out.today) return null;
+  if (echoes.test(out.title) || echoes.test(out.today) || echoes.test(out.divergence || '')) return null;
+  return out;
 }
 
 function safeJson(text) {
@@ -74,32 +79,29 @@ async function askKimi(system, user, maxTokens) {
 }
 
 const BRANCH_SYSTEM = [
-  'You generate "parallel lives" — plausible alternative present-day lives for a real person,',
-  'each stemming from one of their real decisions having gone differently. Think superposition:',
-  'the same person, the same starting material, a different branch taken.',
+  'You imagine a parallel life: the same real person, but one of their decisions went differently.',
+  'Think superposition — same starting material, a different branch taken.',
   '',
-  'Rules:',
-  '- Each branch diverges from ONE specific decision the person described. Name that divergence.',
-  '- Describe where that branch leads to TODAY: work, place, daily texture, who they became.',
-  '- Be specific and vivid. Real street-level detail beats grand abstraction.',
-  '- Alternative relationships and family are fair game — a different branch means different people.',
-  '- BUT never make adverse predictions about a real named person from their actual life',
-  '  (no "you and Sarah would have divorced"). Branch outward into new possibilities instead',
-  '  of rewriting the real people they named into bad outcomes.',
-  '- Keep it warm and curious, never fatalistic or a judgement on the life they actually chose.',
-  '- No mysticism, no destiny, no "the universe". This is a thought experiment, not a prophecy.',
+  'Be specific and vivid. Real street-level detail beats grand abstraction.',
+  'Alternative relationships and family are fair game — a different branch means different people.',
+  'But never predict bad outcomes for a real named person from their actual life.',
+  'Warm and curious. Never fatalistic, never a judgement on the life they actually chose.',
+  'No mysticism, no destiny, no "the universe". A thought experiment, not a prophecy.',
   '',
-  'Output format — use exactly these labels, one per line, nothing else:',
-  'Title: a 3-5 word name for this life',
-  'Divergence: the decision that went differently, one line',
-  'Year: the approximate year it diverged',
-  'Today: 2-3 sentences on their life in this branch now',
-  'Work: what they do',
-  'Place: where they are',
-  'Texture: one sensory detail of an ordinary day there',
-  'Cost: what they gave up, one line',
-  'Mood: one of ember, tide, neon, dust, frost, bloom',
-  'Do not write anything before or after those lines. Do not explain your reasoning.',
+  'Reply with exactly nine lines in this shape. Here is a worked example of the',
+  'style and level of detail expected — write your own, do not copy this one:',
+  '',
+  'Title: The Rotterdam Drawings',
+  'Divergence: Took the architecture place at Sheffield instead of computer science.',
+  'Year: 2009',
+  'Today: They run a four-person studio in Rotterdam doing social housing competitions. The work is slower and poorer than the life they actually have, but the buildings outlast them. They still cannot walk past scaffolding without stopping.',
+  'Work: Architect, small practice, mostly public commissions',
+  'Place: Rotterdam',
+  'Texture: Tracing paper curling in the radiator heat, coffee going cold on the drawing board.',
+  'Cost: The money, and the friends they would have made in London.',
+  'Mood: dust',
+  '',
+  'Write nothing before or after those nine lines. No preamble, no reasoning, no explanation.',
 ].join('\n');
 
 const CROSS_SYSTEM = [
