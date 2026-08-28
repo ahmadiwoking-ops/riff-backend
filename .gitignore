@@ -2,3 +2,18 @@ node_modules
 .env
 *.log
 .DS_Store
+
+# local dev scripts
+seed-*.js
+check-*.js
+test-*.js
+add-*.js
+pl-test.js
+clear-chats.js
+create-circle.js
+fix-stage.js
+skip-stage.js
+genie-webhook.js
+list-users.js
+upgrade-*.js
+*.oldflow
