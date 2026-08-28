@@ -40,8 +40,13 @@ const MOODS = ['ember', 'tide', 'neon', 'dust', 'frost', 'bloom'];
 
 // Fixed set: each maps to an illustration in the app's library. The model must
 // pick one of these, never invent a new one, or the image lookup misses.
-const CATEGORIES = ['craft', 'design', 'food', 'medicine', 'service', 'academic',
-  'stage', 'tech', 'corporate', 'land', 'sea', 'travel', 'care', 'trade', 'solitary'];
+const CATEGORIES = [
+  'carpenter','potter','maker','restorer','architect','designer','illustrator','chef','baker','cafe_owner',
+  'doctor','nurse','veterinarian','paramedic','police_officer','firefighter','teacher','social_worker','researcher','scientist',
+  'lecturer','musician','actor','writer','performer','developer','product_manager','startup_founder','office_professional','finance_analyst',
+  'manager','farmer','outdoor_guide','conservationist','sailor','fisherman','nomad','tour_guide','expat','community_builder',
+  'parent','family_life','community_worker','mechanic','builder','electrician','remote_worker','monastic_life','off_grid_living','writer_in_nature',
+];
 
 // kimi-k2.6 narrates in prose even when told to return JSON, and long
 // structured requests truncate before the object is ever written. So we ask
@@ -313,7 +318,7 @@ async function parallelRoutes(app) {
       }
     }));
     branches = settled.filter(Boolean).map(function (b) {
-      if (!b.category || CATEGORIES.indexOf(b.category) === -1) b.category = 'tech';
+      if (!b.category || CATEGORIES.indexOf(b.category) === -1) b.category = 'office_professional';
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
       return b;
     });
