@@ -142,7 +142,7 @@ async function structureBranch(prose) {
     'Do not invent new facts; use only what is in the draft you chose.',
     'Keep the writer\'s own phrasing and specific details — quote them wherever you can.',
     'Keep everything in FIRST PERSON ("I"), exactly as written.',
-    'Return exactly these keys:',
+    'Respond with a single JSON object containing exactly these keys:',
     '{"title":"2-5 word noun phrase","divergence":"the decision that went differently, ONE complete sentence",',
     '"year":"four-digit year the decision was made",',
     '"moment":"beat 1 — the day it turned, 2-3 sentences",',
@@ -370,26 +370,22 @@ async function parallelRoutes(app) {
     // The three branches are independent, so generate them concurrently.
     // Sequentially this was six model calls back to back and ran past three
     // minutes; in parallel it is bounded by the slowest single branch.
-    let _sample = null;
     const settled = await Promise.all(FOCUS.map(async function (focus, i) {
       try {
         const prose = await writeBranchProse(lines, focus);   // Kimi: the writing
         if (!prose) { request.log.warn({ i: i }, 'parallel: no prose'); return null; }
         request.log.warn({ focus: focus, prose: String(prose).slice(0, 1500) }, 'PL_PROSE');
         const json = await structureBranch(prose);            // mini: the fields
-        if (i === 0) { _sample = { prose: String(prose).slice(0,300), json: String(json).slice(0,600) }; }
         let b = parseBranch(json);
         if (!b) { b = parseBranch(await structureBranch(prose)); }  // one retry of structuring only
         return b;
       } catch (err) {
-        if (!_sample) _sample = { err: (err && (err.message || String(err))), at: (err && err.stack ? err.stack.split('\n')[1] : '') };
         request.log.error(err, 'parallel: branch ' + i + ' failed');
         return null;
       }
     }));
     // With sparse answers every focus can collapse onto the same fork, giving
     // five versions of one life. Drop near-duplicates rather than showing them.
-    var _rawCount = settled.filter(Boolean).length;
     var seenTitles = {};
     branches = settled.filter(Boolean).filter(function (b) {
       var key = String(b.title || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 14);
@@ -404,7 +400,7 @@ async function parallelRoutes(app) {
       return b;
     });
     if (!branches.length) {
-      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.', _n: { parsed: (typeof _rawCount === 'number' ? _rawCount : -1), afterDedupe: branches.length }, _s: _sample });
+      return reply.code(502).send({ error: 'Could not generate your parallel lives just now. Please try again.' });
     }
     branches = branches.map(function (b) {
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
