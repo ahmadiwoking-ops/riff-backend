@@ -56,7 +56,7 @@ function parseBranch(text) {
   var j = safeJson(text);
   if (j && j.title) return j;
   var out = {};
-  var keys = ['title','divergence','year','moment','after','led','today','work','place','texture','cost','mood','category'];
+  var keys = ['title','divergence','year','moment','after','led','today','work','place','texture','cost','mood','category','lifetype'];
   String(text).split(/\r?\n/).forEach(function (line) {
     var m = line.match(/^\s*[-*]?\s*([A-Za-z ]+)\s*:\s*(.+)$/);
     if (!m) return;
@@ -81,6 +81,21 @@ function parseBranch(text) {
   if (/\(or something|\bmaybe\b|let'?s say|something evocative|or similar\)/i.test(vals)) return null;
   // Reject unfilled filler that trails off into questions.
   if (/\?\s*(the|specific)/i.test(out.cost || '')) return null;
+  // Chronology: the fork comes first. Any year named in a later beat that
+  // predates it means the model has put a consequence before its cause.
+  var fork = parseInt(String(out.year || '').match(/\b(19|20)\d{2}\b/) || [0], 10);
+  if (fork) {
+    var later = [out.after, out.led, out.today].filter(Boolean).join(' ');
+    var years = later.match(/\b(19|20)\d{2}\b/g) || [];
+    for (var y = 0; y < years.length; y++) {
+      if (parseInt(years[y], 10) < fork) return null;
+    }
+  }
+  // Normalise the life type; default to vocation when absent.
+  var LT = ['vocation','place','people','pursuit','ordinary'];
+  out.lifeType = out.lifeType || out.lifetype || 'vocation';
+  if (LT.indexOf(out.lifeType) === -1) out.lifeType = 'vocation';
+  delete out.lifetype;
   return out;
 }
 
@@ -130,41 +145,54 @@ async function writeBranchProse(lifeLines, focus) {
 }
 
 // Stage two: mini turns that prose into the fields. Trivial extraction task.
-async function structureBranch(prose) {
+async function structureBranch(prose, forkYear) {
   if (!openai || !prose) return null;
   const system = [
     'You are given a writer\'s notes describing one parallel life, told in first person.',
-    'The notes often contain SEVERAL COMPETING DRAFTS of the same life. Choose the ONE',
-    'most complete draft and use only that draft. Never combine details from different',
-    'drafts — mixing them produces a life that contradicts itself (a media career reached',
-    'through an IT degree, and so on). If two drafts disagree about what they studied,',
-    'where they live or what they do, pick one draft and discard the other entirely.',
-    'Do not invent new facts; use only what is in the draft you chose.',
+    'The notes may contain several competing drafts. Choose the ONE most complete draft',
+    'and use only that. Never combine details from different drafts — mixing them makes a',
+    'life that contradicts itself. Do not invent facts beyond the draft you chose.',
     'Keep the writer\'s own phrasing and specific details — quote them wherever you can.',
-    'Keep everything in FIRST PERSON ("I"), exactly as written.',
-    'Respond with a single JSON object containing exactly these keys:',
-    '{"title":"2-5 word noun phrase","divergence":"the decision that went differently, ONE complete sentence",',
+    'Keep everything in FIRST PERSON ("I").',
+    '',
+    'CHRONOLOGY MATTERS. The four beats run forward in time and must not contradict',
+    'each other: the fork happens first, then the years after it, then where it led,',
+    'then the present day. Any year you mention in a later beat must be LATER than the',
+    'fork year. Never place a consequence before its cause.',
+    '',
+    'A life is not only a job. If this life is really about who I live with, where I',
+    'settled, the people around me or how I spend my days, say so — do not force a career',
+    'into the centre of it.',
+    '',
+    'Respond with a single JSON object with exactly these keys:',
+    '{"title":"2-5 word evocative noun phrase, specific to this life",',
+    '"divergence":"the decision that went differently, ONE complete sentence",',
     '"year":"four-digit year the decision was made",',
-    '"moment":"beat 1 — the day it turned, 2-3 sentences",',
-    '"after":"beat 2 — the years just after, 2-3 sentences",',
-    '"led":"beat 3 — the shape my life took, 2-3 sentences",',
-    '"today":"beat 4 — an ordinary present-day moment, 2-3 sentences",',
-    '"work":"my job","place":"where I live",',
+    '"moment":"the day it turned, 2-3 sentences",',
+    '"after":"the years just after, 2-3 sentences",',
+    '"led":"the shape my life took, 2-3 sentences",',
+    '"today":"an ordinary present-day moment, 2-3 sentences",',
+    '"work":"what I do — may be unpaid or domestic, or empty if this life is not about work",',
+    '"place":"where I live",',
+    '"lifeType":"one of: vocation, place, people, pursuit, ordinary",',
     '"cost":"what I gave up, one complete sentence",',
     '"mood":"one of: ember, tide, neon, dust, frost, bloom",',
-    '"category":"one of: craft, design, food, medicine, service, academic, stage, tech,',
-    'corporate, land, sea, travel, care, trade, solitary"}',
-    'category: whichever best describes the WORK or shape of this life. craft=making things',
-    'by hand, design=architecture and design, food=cooking and hospitality, medicine=health',
-    'and animals, service=police fire teaching social work, academic=research and teaching at',
-    'a university, stage=music acting writing performing, tech=software and startups,',
-    'corporate=office and management, land=farming and outdoors, sea=coastal and sailing,',
-    'travel=nomadic and guiding, care=family and community, trade=building and mechanics,',
-    'solitary=remote or off-grid. Pick the closest — never invent a new one.',
+    '"category":"the single closest match from the list below"}',
+    '',
+    'lifeType: what this life is really ABOUT. vocation=the work itself, place=where they',
+    'settled, people=partner, family or community, pursuit=a passion that became central,',
+    'ordinary=a quiet contented life with no reinvention.',
+    '',
     'mood: ember=warm and driven, tide=steady and calm, neon=fast and urban,',
     'dust=quiet and craft-like, frost=austere or solitary, bloom=growing and hopeful.',
-    'Do not default to bloom. Never truncate a sentence mid-clause. No placeholders,',
-    'no brackets, no hedging, no alternatives.',
+    'Do not default to bloom.',
+    '',
+    'category must be EXACTLY one of: ' + CATEGORIES.join(', ') + '.',
+    'Choose it for the dominant activity of the life, whether or not it is paid work.',
+    'A life centred on raising children is parent or family_life. A life centred on a',
+    'community is community_builder or community_worker.',
+    '',
+    'Never truncate a sentence mid-clause. No placeholders, no brackets, no hedging.',
 ].join('\n');
   const res = await openai.chat.completions.create({
     model: PL_MODEL,
@@ -308,6 +336,14 @@ var CATEGORY_HINTS = [
   ['maker', ['maker','workshop','hand-built','craftsman']],
 ];
 function deriveCategory(b) {
+  // A life about people or place should not be filed under whatever job it
+  // happens to mention in passing.
+  if (b.lifeType === 'people') {
+    var ppl = [b.title, b.led, b.today].filter(Boolean).join(' ').toLowerCase();
+    if (/child|kids|son|daughter|raising|baby|school run/.test(ppl)) return 'parent';
+    if (/community|neighbour|neighbor|village hall|volunteer/.test(ppl)) return 'community_builder';
+    return 'family_life';
+  }
   var primary = String(b.work || '').toLowerCase();
   var hay = primary;
   var pass2 = [b.title, b.place, b.led].filter(Boolean).join(' ').toLowerCase();
