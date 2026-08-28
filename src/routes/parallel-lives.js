@@ -388,12 +388,16 @@ async function parallelRoutes(app) {
     let branches = [];
     // Deliberately distinct so the three branches do not collapse into one idea.
     // Five distinct forks so the set feels worth browsing.
+    // Deliberately spread across DIFFERENT DOMAINS of a life, not five variations
+    // on 'career'. Branches are generated in parallel and cannot see each other,
+    // so if the focuses are similar they all collapse onto the same strong signal
+    // in the answers and the duplicate filter then discards most of them.
     const FOCUS = [
-      'the education or training path they nearly took instead',
-      'the place they did not move to, or the move they did not make',
-      'the professional risk they talked themselves out of taking',
-      'the opportunity or offer they turned down',
-      'the person or relationship that redirected them, going the other way',
+      'WHAT THEY DO: the training or vocation they nearly took instead. Build the whole life around that different craft or profession.',
+      'WHERE THEY LIVE: they never moved where they moved, or they left somewhere they stayed. Same person, same work if you like, but a completely different place — a different city, coast, countryside or country.',
+      'WHO THEY ARE WITH: a relationship, friendship or family decision went the other way. Focus on the people around them and the domestic shape of the life, not the job.',
+      'HOW THEY SPEND THEIR TIME: they kept the thing they let go of — the instrument, the sport, the side project, the volunteering — and it grew into the centre of their life instead of staying a hobby.',
+      'THE QUIETER LIFE: they took the safe, small, unglamorous option at the biggest fork, and it worked out. No reinvention, no leap. Show what an ordinary contented version of them looks like.',
     ];
     // The three branches are independent, so generate them concurrently.
     // Sequentially this was six model calls back to back and ran past three
