@@ -49,6 +49,11 @@ function parseBranch(text) {
   var vals = [out.title, out.today, out.divergence, out.cost].filter(Boolean).join(' ');
   if (thinking.test(vals)) return null;
   if (out.title && out.title.length > 60) return null;
+  // Reject bracketed placeholders — the model sometimes returns the template
+  // itself: '[Something]', '[Year]', '[Specific decision]'.
+  if (/\[[^\]]+\]/.test(vals)) return null;
+  // Reject unfilled filler that trails off into questions.
+  if (/\?\s*(the|specific)/i.test(out.cost || '')) return null;
   return out;
 }
 
@@ -108,6 +113,8 @@ const BRANCH_SYSTEM = [
   'Mood: dust',
   '',
   'Write nothing before or after those nine lines. No preamble, no reasoning, no explanation.',
+  'Every line must contain real invented detail. Never write placeholders like [Something],',
+  '[Year] or [Description], and never leave a line as a question or a list of options.',
 ].join('\n');
 
 const CROSS_SYSTEM = [
@@ -200,7 +207,16 @@ async function parallelRoutes(app) {
           'Here is their life, in their own words:\n\n' + lines +
           '\n\nGenerate exactly ONE branch, diverging from ' + FOCUS[i] + '.', 900);
         if (!_dbgRaw) _dbgRaw = raw ? ('len=' + raw.length + ' | ' + String(raw).slice(-400)) : '(empty)';
-        const b = parseBranch(raw);
+        let b = parseBranch(raw);
+        // One retry: the model intermittently returns the template rather than
+        // filling it in, and a second attempt usually lands.
+        if (!b) {
+          const raw2 = await askKimi(BRANCH_SYSTEM,
+            'Here is their life, in their own words:\n\n' + lines +
+            '\n\nGenerate exactly ONE branch, diverging from ' + FOCUS[i] + '.' +
+            '\n\nWrite real invented detail on every line. No placeholders, no square brackets, no reasoning.', 900);
+          b = parseBranch(raw2);
+        }
         if (b) branches.push(b);
       } catch (err) {
         _dbgErr = (err && (err.status ? err.status + ' ' : '') + (err.message || 'unknown'));
