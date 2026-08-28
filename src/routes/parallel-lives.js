@@ -231,6 +231,68 @@ const CROSS_SYSTEM = [
   '"odds":"a plain-language sense of how likely, one line"}],"note":"one line overview, or an honest note if they rarely cross"}',
 ].join('\n');
 
+var CATEGORY_HINTS = [
+  ['carpenter', ['carpenter','joiner','woodwork','cabinet']],
+  ['potter', ['potter','ceramic','pottery','kiln']],
+  ['restorer', ['restorer','restoration','conservator','antique']],
+  ['architect', ['architect','architecture']],
+  ['illustrator', ['illustrator','illustration']],
+  ['designer', ['designer','design studio','graphic']],
+  ['chef', ['chef','cook','kitchen','restaurant']],
+  ['baker', ['baker','bakery','sourdough','bread']],
+  ['cafe_owner', ['cafe','coffee shop','barista','roaster']],
+  ['doctor', ['doctor','gp','physician','surgeon','consultant']],
+  ['nurse', ['nurse','midwife']],
+  ['veterinarian', ['vet','veterinar']],
+  ['paramedic', ['paramedic','ambulance']],
+  ['police_officer', ['police','constable','detective']],
+  ['firefighter', ['firefighter','fire service']],
+  ['teacher', ['teacher','teaching','schoolteacher','classroom']],
+  ['social_worker', ['social work','support worker','caseworker']],
+  ['researcher', ['researcher','research fellow','phd','laboratory']],
+  ['scientist', ['scientist','physicist','biologist','chemist']],
+  ['lecturer', ['lecturer','professor','academic','university']],
+  ['musician', ['musician','guitar','band','composer','songwriter']],
+  ['actor', ['actor','acting','theatre company']],
+  ['performer', ['performer','dancer','circus','stage']],
+  ['writer', ['writer','author','novelist','journalist','poet']],
+  ['developer', ['developer','engineer','programmer','coding','software']],
+  ['product_manager', ['product manager','product lead','product owner']],
+  ['startup_founder', ['founder','startup','co-founder','own company']],
+  ['finance_analyst', ['finance','analyst','accountant','banking']],
+  ['manager', ['manager','managing','team lead','director']],
+  ['farmer', ['farmer','farm','smallholding','beekeep','orchard']],
+  ['outdoor_guide', ['guide','mountain','climbing instructor','ranger']],
+  ['conservationist', ['conservation','ecolog','wildlife','rewilding']],
+  ['sailor', ['sailor','sailing','skipper','yacht']],
+  ['fisherman', ['fisherman','fishing','trawler']],
+  ['nomad', ['nomad','van life','travelling','itinerant']],
+  ['tour_guide', ['tour guide','tours','guiding visitors']],
+  ['expat', ['expat','abroad','overseas']],
+  ['community_builder', ['community project','community garden','organiser']],
+  ['community_worker', ['community worker','charity','volunteer','food bank']],
+  ['parent', ['parent','raising','stay-at-home','father','mother']],
+  ['family_life', ['family life','family']],
+  ['mechanic', ['mechanic','garage','engines']],
+  ['builder', ['builder','construction','site manager']],
+  ['electrician', ['electrician','electrical']],
+  ['remote_worker', ['remote','freelance','consultant','contractor']],
+  ['monastic_life', ['monastic','monk','retreat','contemplative']],
+  ['off_grid_living', ['off-grid','off grid','self-sufficient','cabin']],
+  ['writer_in_nature', ['writing cabin','writes in the hills']],
+  ['maker', ['maker','workshop','hand-built','craftsman']],
+];
+function deriveCategory(b) {
+  var hay = [b.work, b.title, b.place, b.led].filter(Boolean).join(' ').toLowerCase();
+  for (var i = 0; i < CATEGORY_HINTS.length; i++) {
+    var key = CATEGORY_HINTS[i][0], words = CATEGORY_HINTS[i][1];
+    for (var j = 0; j < words.length; j++) {
+      if (hay.indexOf(words[j]) !== -1) return key;
+    }
+  }
+  return 'office_professional';
+}
+
 async function parallelRoutes(app) {
   // The eight prompts, served so client and server cannot drift.
   app.get('/prompts', { preHandler: [app.authenticate] }, async () => {
@@ -318,7 +380,9 @@ async function parallelRoutes(app) {
       }
     }));
     branches = settled.filter(Boolean).map(function (b) {
-      if (!b.category || CATEGORIES.indexOf(b.category) === -1) b.category = 'office_professional';
+      // The model ignores a 50-item list buried in a prompt, so derive the
+      // category from the `work` and `place` text it does produce reliably.
+      if (!b.category || CATEGORIES.indexOf(b.category) === -1) b.category = deriveCategory(b);
       if (!b.mood || MOODS.indexOf(b.mood) === -1) b.mood = MOODS[Math.floor(Math.random() * MOODS.length)];
       return b;
     });
