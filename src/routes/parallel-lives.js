@@ -56,7 +56,7 @@ function parseBranch(text) {
   var j = safeJson(text);
   if (j && j.title) return j;
   var out = {};
-  var keys = ['title','divergence','year','moment','after','led','today','work','place','texture','cost','mood','category','lifetype'];
+  var keys = ['title','tagline','divergence','year','moment','first','feet','people','after','led','today','work','place','texture','cost','mood','category','lifetype'];
   String(text).split(/\r?\n/).forEach(function (line) {
     var m = line.match(/^\s*[-*]?\s*([A-Za-z ]+)\s*:\s*(.+)$/);
     if (!m) return;
@@ -85,7 +85,7 @@ function parseBranch(text) {
   // predates it means the model has put a consequence before its cause.
   var fork = parseInt(String(out.year || '').match(/\b(19|20)\d{2}\b/) || [0], 10);
   if (fork) {
-    var later = [out.after, out.led, out.today].filter(Boolean).join(' ');
+    var later = [out.first, out.feet, out.people, out.after, out.led, out.today].filter(Boolean).join(' ');
     var years = later.match(/\b(19|20)\d{2}\b/g) || [];
     for (var y = 0; y < years.length; y++) {
       if (parseInt(years[y], 10) < fork) return null;
@@ -117,13 +117,16 @@ async function writeBranchProse(lifeLines, focus) {
     'You imagine a parallel life: the same real person, but one decision went differently.',
     'Write it in FIRST PERSON, as that person looking back. Use "I", never "they".',
     '',
-    'Tell it as four beats, in order:',
-    '1. THE MOMENT — the decision itself, the day it turned. Concrete: a room, a letter, a phone call.',
-    '2. THE YEARS AFTER — what the first few years looked like. What was hard, what surprised me.',
-    '3. WHERE IT LED — the shape my life took. Work, people, the place I ended up.',
-    '4. TODAY — an ordinary present-day moment, in sensory detail. What I can smell, hear, see right now.',
+    'Tell it as six beats, in order:',
+    '1. THE MOMENT — the decision itself, the day it turned. A room, a letter, a phone call.',
+    '2. THE FIRST YEAR — the immediate aftermath. What I got wrong, what frightened me.',
+    '3. FINDING MY FEET — how it started to work, and what it cost to get there.',
+    '4. THE PEOPLE — who came into this life, and who I lost touch with because of it.',
+    '5. WHERE IT LED — the shape the life took over years. Work, home, the rhythm of it.',
+    '6. TODAY — an ordinary present-day moment, in sensory detail. What I smell, hear, see right now.',
     '',
-    'Two or three sentences per beat. Be specific — a neighbourhood, a job, a smell, a habit.',
+    'FOUR to SIX sentences per beat — this should read as a proper story, not a summary.',
+    'Be specific — a neighbourhood, a job, a smell, a habit, a name.',
     'Say plainly what I gave up for this life. Warm and curious, never fatalistic, never a',
     'judgement on the life I actually chose. No mysticism, no destiny. Alternative relationships',
     'are fine, but never predict bad outcomes for a real named person from my actual life.',
@@ -168,10 +171,13 @@ async function structureBranch(prose, forkYear) {
     '{"title":"2-5 word evocative noun phrase, specific to this life",',
     '"divergence":"the decision that went differently, ONE complete sentence",',
     '"year":"four-digit year the decision was made",',
-    '"moment":"the day it turned, 2-3 sentences",',
-    '"after":"the years just after, 2-3 sentences",',
-    '"led":"the shape my life took, 2-3 sentences",',
-    '"today":"an ordinary present-day moment, 2-3 sentences",',
+    '"tagline":"one short second-person line naming the trade-off, e.g. You chose the drawing board over the salary",',
+    '"moment":"beat 1 — the day it turned, 4-6 sentences",',
+    '"first":"beat 2 — the first year after, 4-6 sentences",',
+    '"feet":"beat 3 — finding my feet, 4-6 sentences",',
+    '"people":"beat 4 — who came into this life and who I lost, 4-6 sentences",',
+    '"led":"beat 5 — the shape the life took, 4-6 sentences",',
+    '"today":"beat 6 — an ordinary present-day moment, 4-6 sentences",',
     '"work":"a SHORT LABEL of 2-5 words, not a sentence (e.g. Architect, small practice). May be unpaid or domestic. Empty if this life is not about work.",',
     '"place":"a SHORT LABEL of 2-5 words, not a sentence (e.g. Brockley, London).",',
     '"lifeType":"one of: vocation, place, people, pursuit, ordinary",',
@@ -197,7 +203,7 @@ async function structureBranch(prose, forkYear) {
   const res = await openai.chat.completions.create({
     model: PL_MODEL,
     temperature: 0.3,
-    max_tokens: 1100,
+    max_tokens: 2600,
     response_format: { type: 'json_object' },
     messages: [{ role: 'system', content: system }, { role: 'user', content: prose.slice(0, 6000) }],
   });
