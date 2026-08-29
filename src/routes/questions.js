@@ -143,8 +143,7 @@ async function runMatching(userId) {
     select: { userAId: true, userBId: true },
   });
   var connectedIds = connRows.map(function (c) { return c.userAId === userId ? c.userBId : c.userAId; });
-  var excludeIds = blockedIds.concat(connectedIds).filter(function (id) { return typeof id === 'string' && id.length > 0; });
-  console.log('[matching] excluding ' + excludeIds.length + ' (blocked ' + blockedIds.length + ', connected ' + connectedIds.length + ')');
+  var excludeIds = blockedIds.concat(connectedIds);
   var candidates = await prisma.user.findMany({ where: { id: { not: userId, notIn: excludeIds } }, select: { id: true, alias: true, connectionType: true, matchVector: true, idVerified: true, trustScore: true, plan: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } });
   var filtered = candidates.filter(function(c) {
     if (!c.matchVector || !c.matchVector.answers) return false;
