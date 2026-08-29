@@ -138,8 +138,11 @@ async function runMatching(userId) {
   // Anyone already connected to is not a new match: an active connection is
   // already a conversation, and an ended one has Connect Back as its route.
   // Without this they reappear in the match list looking like fresh matches.
+  // Only ENDED connections are excluded. Active ones must stay in the list —
+  // tapping a match creates a connection, and excluding those would make the
+  // person vanish from the screen the moment you started talking to them.
   var connRows = await prisma.connection.findMany({
-    where: { OR: [{ userAId: userId }, { userBId: userId }], isPractice: false },
+    where: { OR: [{ userAId: userId }, { userBId: userId }], isPractice: false, isActive: false },
     select: { userAId: true, userBId: true },
   });
   var connectedIds = connRows.map(function (c) { return c.userAId === userId ? c.userBId : c.userAId; });
