@@ -12,7 +12,10 @@ async function connectionRoutes(app) {
       orderBy: { updatedAt: 'desc' },
     });
     // Split into active and ended (ended = recoverable via Connect back)
-    var active = all.filter(function(c) { return c.isActive; });
+    var active = all.filter(function(c) { return c.isActive; }).map(function(c) {
+      // Give active connections the same shape as ended: a resolved `other`.
+      return Object.assign({}, c, { other: c.userAId === userId ? c.userB : c.userA });
+    });
     var ended = all.filter(function(c) { return !c.isActive && c.stage === 'ended'; }).map(function(c) {
       var iAmA = c.userAId === userId;
       return {

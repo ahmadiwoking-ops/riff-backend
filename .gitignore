@@ -17,3 +17,11 @@ genie-webhook.js
 list-users.js
 upgrade-*.js
 *.oldflow
+
+# local dev/debug scripts
+check*.js
+clearcache.js
+seed-*.js
+test-*.js
+patch-*.js
+pl-test.js
