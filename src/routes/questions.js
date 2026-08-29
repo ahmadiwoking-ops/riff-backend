@@ -135,7 +135,16 @@ async function runMatching(userId) {
   // should ever be offered as a match.
   var blockRows = await prisma.block.findMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] }, select: { blockerId: true, blockedId: true } });
   var blockedIds = blockRows.map(function (b) { return b.blockerId === userId ? b.blockedId : b.blockerId; });
-  var candidates = await prisma.user.findMany({ where: { id: { not: userId, notIn: blockedIds } }, select: { id: true, alias: true, connectionType: true, matchVector: true, idVerified: true, trustScore: true, plan: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } });
+  // Anyone already connected to is not a new match: an active connection is
+  // already a conversation, and an ended one has Connect Back as its route.
+  // Without this they reappear in the match list looking like fresh matches.
+  var connRows = await prisma.connection.findMany({
+    where: { OR: [{ userAId: userId }, { userBId: userId }], isPractice: false },
+    select: { userAId: true, userBId: true },
+  });
+  var connectedIds = connRows.map(function (c) { return c.userAId === userId ? c.userBId : c.userAId; });
+  var excludeIds = blockedIds.concat(connectedIds);
+  var candidates = await prisma.user.findMany({ where: { id: { not: userId, notIn: excludeIds } }, select: { id: true, alias: true, connectionType: true, matchVector: true, idVerified: true, trustScore: true, plan: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } });
   var filtered = candidates.filter(function(c) {
     if (!c.matchVector || !c.matchVector.answers) return false;
     if (myTopics.length === 0) return true;
