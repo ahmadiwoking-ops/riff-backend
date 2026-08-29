@@ -44,7 +44,7 @@ async function authRoutes(app) {
       if (!valid) return reply.status(401).send({ error: 'Invalid email or password' });
       await prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } });
       const token = app.jwt.sign({ id: user.id, alias: user.alias, role: 'user' });
-      return { user: { id: user.id, alias: user.alias, email: user.email, plan: user.plan, trustScore: user.trustScore, idVerified: user.idVerified }, token };
+      return { user: { id: user.id, alias: user.alias, email: user.email, plan: user.plan, trustScore: user.trustScore, idVerified: user.idVerified, avatarEmoji: user.avatarEmoji, avatarColour: user.avatarColour, displayPhoto: user.displayPhoto }, token };
     } catch (err) { app.log.error(err); return reply.status(500).send({ error: 'Login failed' }); }
   });
 
