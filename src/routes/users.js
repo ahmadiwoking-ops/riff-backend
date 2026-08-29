@@ -8,14 +8,11 @@ const prisma = require('../db');
 // misnomer, but renaming a live column across five queries and six render
 // sites is risk for no functional gain.
 var AVATAR_IDS = [
-  'av_music', 'av_guitar', 'av_headphones',
-  'av_mountains', 'av_waves', 'av_forest',
-  'av_books', 'av_coffee', 'av_writing',
-  'av_football', 'av_running', 'av_cycling',
-  'av_ramen', 'av_cooking', 'av_baking',
-  'av_paint', 'av_camera', 'av_theatre',
-  'av_code', 'av_gaming', 'av_rocket',
-  'av_calm', 'av_plant', 'av_cat',
+  'av_carpenter', 'av_potter', 'av_architect', 'av_illustrator', 'av_chef', 'av_baker',
+  'av_doctor', 'av_nurse', 'av_veterinarian', 'av_paramedic', 'av_police_officer', 'av_firefighter',
+  'av_teacher', 'av_social_worker', 'av_scientist', 'av_lecturer', 'av_musician', 'av_actor',
+  'av_writer', 'av_developer', 'av_product_manager', 'av_manager', 'av_office_professional', 'av_finance_analyst',
+  'av_farmer', 'av_outdoor_guide', 'av_sailor', 'av_fisherman', 'av_tour_guide', 'av_monastic_life',
 ];
 
 async function userRoutes(app) {
