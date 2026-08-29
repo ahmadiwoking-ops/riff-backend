@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { getLimits } = require('../services/plan-limits');
 
 async function questionRoutes(app) {
   // Answers can be redone, but not used as a slot machine: a redo rebuilds the
@@ -96,17 +97,43 @@ async function questionRoutes(app) {
     var userPlan = await prisma.user.findUnique({ where: { id: request.user.id }, select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true } });
     var plan = (userPlan && userPlan.plan) || 'free';
     if (userPlan && userPlan.planExpiresAt && userPlan.planExpiresAt < new Date()) plan = 'free';
-    var MATCH_LIMITS = { free: 1, explorer: 3, inner_circle: 10, bot_connection: 0 };
-    var matchLimit = MATCH_LIMITS[plan] !== undefined ? MATCH_LIMITS[plan] : 1;
-    if (matchLimit === 0) return { matches: [], plan: plan, message: 'Upgrade to see matches' };
+    var planLimit = getLimits(plan).deepConnections;
+    if (planLimit === 0) return { matches: [], plan: plan, message: 'Upgrade to see matches' };
     var user = userPlan;
     if (!user || !user.matchVector || !user.matchVector.answers) return { matches: [] };
+
+    // Everyone this user already has a connection record with, active or ended.
+    // Excluded from NEW matches only: actives come from /api/connections and
+    // ended ones from its .ended array. Filtering HERE rather than inside
+    // runMatching is what stops a person vanishing the moment you tap them.
+    var myConns = await prisma.connection.findMany({
+      where: { OR: [{ userAId: request.user.id }, { userBId: request.user.id }] },
+      select: { userAId: true, userBId: true, isActive: true },
+    });
+    var connectedIds = myConns.map(function (c) { return c.userAId === request.user.id ? c.userBId : c.userAId; });
+    var activeCount = myConns.filter(function (c) { return c.isActive; }).length;
+
+    // Free is a LIFETIME limit - one connection ever, ended included.
+    var usedSlots = plan === 'free' ? myConns.length : activeCount;
+    var remaining = planLimit === -1 ? 999 : Math.max(0, planLimit - usedSlots);
+
+    var pool = null, wasCached = false;
     if (user.matchVector.cachedMatches && user.matchVector.cachedAt) {
       var cacheAge = Date.now() - new Date(user.matchVector.cachedAt).getTime();
-      if (cacheAge < 15 * 60 * 1000) return { matches: user.matchVector.cachedMatches.slice(0, matchLimit), cached: true, plan: plan, totalAvailable: user.matchVector.cachedMatches.length };
+      if (cacheAge < 15 * 60 * 1000) { pool = user.matchVector.cachedMatches; wasCached = true; }
     }
-    var matches = await runMatching(request.user.id);
-    return { matches: matches.slice(0, matchLimit), plan: plan, totalAvailable: matches.length };
+    if (!pool) pool = await runMatching(request.user.id);
+
+    var available = pool.filter(function (m) { return connectedIds.indexOf(m.userId) === -1; });
+    return {
+      matches: available.slice(0, remaining),
+      cached: wasCached,
+      plan: plan,
+      planLimit: planLimit,
+      activeConnections: activeCount,
+      slotsRemaining: remaining,
+      totalAvailable: available.length,
+    };
   });
 
   app.post('/refresh-matches', { preHandler: [app.authenticate] }, async (request) => {
@@ -151,7 +178,7 @@ async function runMatching(userId) {
     if (score.overall >= 40) scored.push({ userId: o.id, alias: o.alias, score: score.overall, breakdown: score.breakdown, idVerified: o.idVerified === true, trustScore: o.trustScore || 'green', avatarEmoji: o.avatarEmoji || null, avatarColour: o.avatarColour || null });
   }
   scored.sort(function(a, b) { return b.score - a.score; });
-  var top = scored.slice(0, 10);
+  var top = scored.slice(0, 30);
   var mv = JSON.parse(JSON.stringify(me.matchVector));
   mv.cachedMatches = top; mv.cachedAt = new Date().toISOString();
   await prisma.user.update({ where: { id: userId }, data: { matchVector: mv } });
