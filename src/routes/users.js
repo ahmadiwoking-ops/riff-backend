@@ -1,15 +1,21 @@
 const prisma = require('../db');
-// The picker fetches this list, and /avatar validates against it, so the two
-// can never drift apart. Emoji only — this renders in other people's UI.
-var AVATAR_EMOJI = [
-  '\u{1F3A7}','\u{1F3B8}','\u{1F3B5}','\u{1F399}',
-  '\u{1F3D4}','\u{1F30A}','\u{1F333}','\u{2600}',
-  '\u{1F4DA}','\u{2615}','\u{270D}','\u{1F3AC}',
-  '\u{26BD}','\u{1F3C3}','\u{1F6B4}','\u{1F3CB}',
-  '\u{1F35C}','\u{1F373}','\u{1F347}','\u{1F36B}',
-  '\u{1F3A8}','\u{1F4F7}','\u{1F3AD}','\u{1F4AD}',
-  '\u{1F4BB}','\u{1F3AE}','\u{1F680}','\u{1F52C}',
-  '\u{1F9D8}','\u{1F331}','\u{1F415}','\u{1F431}',
+// Illustrated avatars. The picker fetches this list and /avatar validates
+// against it, so the two cannot drift apart. Keys match PNG filenames in the
+// app's src/assets/avatars/ folder — Metro is case-sensitive, so they must
+// match exactly.
+//
+// NOTE: these are stored in User.avatarEmoji. The column name is now a
+// misnomer, but renaming a live column across five queries and six render
+// sites is risk for no functional gain.
+var AVATAR_IDS = [
+  'av_music', 'av_guitar', 'av_headphones',
+  'av_mountains', 'av_waves', 'av_forest',
+  'av_books', 'av_coffee', 'av_writing',
+  'av_football', 'av_running', 'av_cycling',
+  'av_ramen', 'av_cooking', 'av_baking',
+  'av_paint', 'av_camera', 'av_theatre',
+  'av_code', 'av_gaming', 'av_rocket',
+  'av_calm', 'av_plant', 'av_cat',
 ];
 
 async function userRoutes(app) {
@@ -23,16 +29,16 @@ async function userRoutes(app) {
     return { deepConnections: deepConns, circles, messagesSent: msgs };
   });
 
-  // Lifestyle avatar shown before a reveal. Emoji only — a short allowlist keeps
-  // arbitrary strings out of a field that renders in other people's UI.
+  // Lifestyle avatar shown before a reveal. Allowlisted ids only — this value
+  // renders in other people's UI, so arbitrary strings must not reach it.
   app.get('/avatar-options', { preHandler: [app.authenticate] }, async () => {
-    return { emoji: AVATAR_EMOJI };
+    return { avatars: AVATAR_IDS, emoji: AVATAR_IDS };
   });
 
   app.put('/avatar', { preHandler: [app.authenticate] }, async (request, reply) => {
     var emoji = request.body && request.body.emoji;
     var colour = request.body && request.body.colour;
-    if (AVATAR_EMOJI.indexOf(emoji) === -1) {
+    if (AVATAR_IDS.indexOf(emoji) === -1) {
       return reply.code(400).send({ error: 'That avatar is not available', code: 'INVALID_AVATAR' });
     }
     if (colour && !/^#[0-9A-Fa-f]{6}$/.test(colour)) {
