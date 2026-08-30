@@ -149,6 +149,7 @@ model Connection {
 model Circle {
   id           String   @id @default(cuid())
   name         String?
+  createdBy    String?  // anchor - may name the circle while it is forming
   stage        String   @default("forming")
   currentRound Int      @default(0)
   isActive     Boolean  @default(true)

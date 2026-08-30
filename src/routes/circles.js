@@ -286,7 +286,7 @@ async function circleRoutes(app) {
       };
     }
 
-    var created = await prisma.circle.create({ data: { stage: 'forming' } });
+    var created = await prisma.circle.create({ data: { stage: 'forming', createdBy: myId } });
     await prisma.circleMember.create({
       data: { circleId: created.id, userId: myId, alias: me.alias || 'Member' },
     });
@@ -363,6 +363,26 @@ async function circleRoutes(app) {
 
     out.sort(function (a, b) { return b.score - a.score; });
     return { suggestions: out, plan: plan };
+  });
+
+
+  // ═══ Name the circle ═══
+  // The anchor names it, and only while forming - once four people are in,
+  // the name belongs to the group and stops moving.
+  app.post('/:id/name', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var name = typeof (request.body || {}).name === 'string' ? request.body.name.trim() : '';
+    if (!name) return { error: 'Give your circle a name.' };
+    if (name.length > 40) return { error: 'That name is too long (40 characters max).' };
+    var c = await prisma.circle.findUnique({
+      where: { id: circleId },
+      include: { members: { where: { isActive: true } } },
+    });
+    if (!c) return { error: 'Circle not found.' };
+    if (c.createdBy !== request.user.id) return { error: 'Only the person who started this circle can name it.', code: 'NOT_ANCHOR' };
+    if (c.stage !== 'forming' || c.members.length >= 4) return { error: 'Your circle is complete, so its name is now fixed.', code: 'LOCKED' };
+    var updated = await prisma.circle.update({ where: { id: circleId }, data: { name: name } });
+    return { status: 'saved', name: updated.name };
   });
 
 }
