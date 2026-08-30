@@ -33,7 +33,9 @@ async function subscriptionRoutes(app) {
     // which your app offers but the old map was missing.
     const priceMap = {
       single_monthly: process.env.STRIPE_PRICE_SINGLE_MONTHLY,
-      single_yearly: process.env.STRIPE_PRICE_SINGLE_BIANNUAL,
+      // Was aliased to the BIANNUAL id, so a card advertising an annual price
+      // billed every 6 months. Falls back to biannual only if no annual id is set.
+      single_yearly: process.env.STRIPE_PRICE_SINGLE_YEARLY || process.env.STRIPE_PRICE_SINGLE_BIANNUAL,
       single_biannual: process.env.STRIPE_PRICE_SINGLE_BIANNUAL,
       explorer_monthly: process.env.STRIPE_PRICE_EXPLORER_MONTHLY,
       explorer_yearly: process.env.STRIPE_PRICE_EXPLORER_YEARLY,
