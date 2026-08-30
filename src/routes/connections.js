@@ -307,5 +307,53 @@ async function connectionRoutes(app) {
     var otherName = 'the other person';
     return { status: 'waiting', message: 'Waiting for ' + otherName + ' to connect back too.', bothReady: false };
   });
+
+  // ═══ Twilio Video access token ═══
+  // Replaces the Jitsi URL: that opened a public room outside the app, and any
+  // holder of the connection id could join it. This is scoped to one room, one
+  // identity, and expires in an hour.
+  app.post('/:id/video-token', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var conn = await prisma.connection.findUnique({ where: { id: request.params.id } });
+    if (!conn) return reply.code(404).send({ error: 'Connection not found.' });
+    if (conn.userAId !== request.user.id && conn.userBId !== request.user.id) {
+      return reply.code(403).send({ error: 'You are not part of this connection.' });
+    }
+    if (!conn.isActive) return reply.code(400).send({ error: 'This connection has ended.' });
+
+    var sid = process.env.TWILIO_ACCOUNT_SID;
+    var key = process.env.TWILIO_API_KEY;
+    var secret = process.env.TWILIO_API_SECRET;
+    if (!sid || !key || !secret) {
+      request.log.error('Twilio video credentials are not configured');
+      return reply.code(503).send({ error: 'Video is not available right now.', code: 'VIDEO_NOT_CONFIGURED' });
+    }
+
+    try {
+      var twilio = require('twilio');
+      var AccessToken = twilio.jwt.AccessToken;
+      var VideoGrant = AccessToken.VideoGrant;
+      var room = 'riff-' + conn.id;
+      var token = new AccessToken(sid, key, secret, { identity: request.user.id, ttl: 3600 });
+      token.addGrant(new VideoGrant({ room: room }));
+
+      var hoursLeft = null;
+      if (conn.videoStartedAt) {
+        var hrs = (Date.now() - new Date(conn.videoStartedAt).getTime()) / 3600000;
+        hoursLeft = Math.max(0, Math.ceil(72 - hrs));
+      }
+      return {
+        token: token.toJwt(),
+        room: room,
+        identity: request.user.id,
+        videoStartedAt: conn.videoStartedAt,
+        hoursLeft: hoursLeft,
+        decisionReady: hoursLeft === 0,
+      };
+    } catch (err) {
+      request.log.error(err, 'twilio video token failed');
+      return reply.code(500).send({ error: 'Could not start the video call.' });
+    }
+  });
+
 }
 module.exports = connectionRoutes;
