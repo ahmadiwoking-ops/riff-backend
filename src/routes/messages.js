@@ -55,6 +55,10 @@ async function messageRoutes(app) {
     });
     if (existing) return { connection: existing };
 
+    // create:false lets the chat screen look without committing a slot - the
+    // row is now created when the first message is sent, not when it is opened.
+    if (request.body.create === false) return { connection: null };
+
     // Check plan limits before creating new connection
     var user = await prisma.user.findUnique({ where: { id: myId }, select: { plan: true, planExpiresAt: true } });
     var plan = user.plan || 'free';
