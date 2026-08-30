@@ -17,6 +17,37 @@ async function subscriptionRoutes(app) {
   app.post('/checkout', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { plan, billing, source } = request.body;
 
+    // checkout with mode:'subscription' creates a SECOND subscription for the same
+    // customer - it does not swap plans. Ask Stripe rather than reading `plan`,
+    // because /cancel sets cancel_at_period_end there and leaves `plan` untouched:
+    // someone who has cancelled still shows a paid plan locally, and should be
+    // allowed to subscribe again.
+    var meNow = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { plan: true, planExpiresAt: true, stripeCustomerId: true },
+    });
+    if (meNow && meNow.stripeCustomerId && process.env.STRIPE_SECRET_KEY) {
+      try {
+        var sCheck = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        var live = await sCheck.subscriptions.list({ customer: meNow.stripeCustomerId, status: 'active', limit: 10 });
+        var renewing = (live.data || []).filter(function (x) { return !x.cancel_at_period_end; });
+        if (renewing.length) {
+          return reply.code(400).send({
+            error: 'You already have an active subscription. Cancel it before choosing a different plan.',
+            code: 'ALREADY_SUBSCRIBED',
+            currentPlan: meNow.plan,
+          });
+        }
+      } catch (e) {
+        // If Stripe is unreachable, fall back to the local plan rather than
+        // risking a double charge.
+        request.log.error(e, 'subscription duplicate check failed');
+        if (meNow.plan && meNow.plan !== 'free' && (!meNow.planExpiresAt || meNow.planExpiresAt > new Date())) {
+          return reply.code(400).send({ error: 'We could not confirm your current subscription. Please try again shortly.', code: 'ALREADY_SUBSCRIBED' });
+        }
+      }
+    }
+
     // Demo / no-Stripe mode: instant upgrade (used when STRIPE_SECRET_KEY is unset).
     if (!process.env.STRIPE_SECRET_KEY) {
       await prisma.user.update({
