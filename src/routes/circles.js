@@ -12,7 +12,7 @@ async function circleRoutes(app) {
 
   // Get circle detail
   app.get('/:id', { preHandler: [app.authenticate] }, async (request) => {
-    return { circle: await prisma.circle.findUnique({ where: { id: request.params.id }, include: { members: { include: { user: { select: { id: true, alias: true, trustScore: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } } } }, rounds: { orderBy: { roundNum: 'desc' }, take: 5, include: { answers: true } }, games: { where: { status: 'active' } } } }) };
+    return { circle: await prisma.circle.findUnique({ where: { id: request.params.id }, include: { members: { include: { user: { select: { id: true, alias: true, trustScore: true, avatarEmoji: true, avatarColour: true, displayPhoto: true, area: true, shareLocation: true } } } }, rounds: { orderBy: { roundNum: 'desc' }, take: 5, include: { answers: true } }, games: { where: { status: 'active' } } } }) };
   });
 
   // Join a circle — with plan-based limits
@@ -327,7 +327,7 @@ async function circleRoutes(app) {
 
     var forming = await prisma.circle.findMany({
       where: { stage: 'forming', isActive: true },
-      include: { members: { where: { isActive: true }, orderBy: { joinedAt: 'asc' }, include: { user: { select: { id: true, alias: true, avatarEmoji: true, avatarColour: true, trustScore: true, matchVector: true } } } } },
+      include: { members: { where: { isActive: true }, orderBy: { joinedAt: 'asc' }, include: { user: { select: { id: true, alias: true, avatarEmoji: true, avatarColour: true, trustScore: true, matchVector: true, area: true, shareLocation: true } } } } },
     });
 
     var toArr = function (m) {
@@ -356,7 +356,7 @@ async function circleRoutes(app) {
         spacesLeft: CIRCLE_SIZE - c.members.length,
         score: avg,
         members: c.members.map(function (m3) {
-          return { id: m3.user.id, alias: m3.user.alias, avatarEmoji: m3.user.avatarEmoji, avatarColour: m3.user.avatarColour, trustScore: m3.user.trustScore };
+          return { id: m3.user.id, alias: m3.user.alias, avatarEmoji: m3.user.avatarEmoji, avatarColour: m3.user.avatarColour, trustScore: m3.user.trustScore, area: m3.user.shareLocation ? (m3.user.area || null) : null };
         }),
       });
     }
