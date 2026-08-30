@@ -9,7 +9,7 @@ async function connectionRoutes(app) {
     const userId = request.user.id;
     var all = await prisma.connection.findMany({
       where: { OR: [{ userAId: userId }, { userBId: userId }] },
-      include: { userA: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } }, userB: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } } },
+      include: { userA: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true, area: true, shareLocation: true } }, userB: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true, area: true, shareLocation: true } } },
       orderBy: { updatedAt: 'desc' },
     });
     // Answer vectors for the breakdown shown on each active card.
