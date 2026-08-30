@@ -17,6 +17,8 @@ model User {
   seekingGender   String
   connectionType  String
   country         String?
+  area            String?  // user-stated city or region
+  shareLocation   Boolean  @default(false)  // off unless the user opts in
   language        String?  @default("en")
   phone           String?  @unique
   phoneVerified   Boolean  @default(false)

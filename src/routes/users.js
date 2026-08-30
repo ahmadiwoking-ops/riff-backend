@@ -47,5 +47,35 @@ async function userRoutes(app) {
     });
     return { status: 'saved', avatarEmoji: emoji, avatarColour: colour || null };
   });
+
+  // ═══ Location shown on match cards ═══
+  // Off by default and never inferred - see the IP geolocation in auth.js,
+  // which is a separate admin-only signal and deliberately not used here.
+  app.get('/location', { preHandler: [app.authenticate] }, async (request) => {
+    var u = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { area: true, country: true, shareLocation: true },
+    });
+    return { area: u ? u.area : null, country: u ? u.country : null, shareLocation: u ? u.shareLocation : false };
+  });
+
+  app.post('/location', { preHandler: [app.authenticate] }, async (request) => {
+    var body = request.body || {};
+    var data = {};
+    if (body.area !== undefined) {
+      var a = typeof body.area === 'string' ? body.area.trim() : '';
+      if (a.length > 60) return { error: 'That area name is too long.' };
+      data.area = a === '' ? null : a;
+    }
+    if (body.country !== undefined) {
+      var c = typeof body.country === 'string' ? body.country.trim().toUpperCase() : '';
+      data.country = c === '' ? null : c.slice(0, 2);
+    }
+    if (body.shareLocation !== undefined) data.shareLocation = body.shareLocation === true;
+    if (!Object.keys(data).length) return { error: 'Nothing to update.' };
+    var u = await prisma.user.update({ where: { id: request.user.id }, data: data });
+    return { status: 'saved', area: u.area, country: u.country, shareLocation: u.shareLocation };
+  });
+
 }
 module.exports = userRoutes;
