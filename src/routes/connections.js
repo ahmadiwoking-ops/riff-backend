@@ -2,6 +2,7 @@ const prisma = require('../db');
 const bcrypt = require('bcryptjs');
 const { checkStageGate, advanceStage } = require('../services/stages');
 const { getLimits } = require('../services/plan-limits');
+const { calculateMatchScore, toArr } = require('./questions');
 
 async function connectionRoutes(app) {
   app.get('/', { preHandler: [app.authenticate] }, async (request) => {
@@ -11,10 +12,27 @@ async function connectionRoutes(app) {
       include: { userA: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } }, userB: { select: { id: true, alias: true, trustScore: true, idVerified: true, avatarEmoji: true, avatarColour: true, displayPhoto: true } } },
       orderBy: { updatedAt: 'desc' },
     });
+    // Answer vectors for the breakdown shown on each active card.
+    var me = await prisma.user.findUnique({ where: { id: userId }, select: { matchVector: true, connectionType: true } });
+    var myVector = me && me.matchVector ? me.matchVector.answers : null;
+    var myType = me ? me.connectionType : 'all';
+    var otherIds = all.filter(function (x) { return x.isActive; }).map(function (x) { return x.userAId === userId ? x.userBId : x.userAId; });
+    var vectors = {};
+    if (myVector && otherIds.length) {
+      var rows = await prisma.user.findMany({ where: { id: { in: otherIds } }, select: { id: true, matchVector: true } });
+      rows.forEach(function (r) { if (r.matchVector && r.matchVector.answers) vectors[r.id] = r.matchVector.answers; });
+    }
+
     // Split into active and ended (ended = recoverable via Connect back)
     var active = all.filter(function(c) { return c.isActive; }).map(function(c) {
       // Give active connections the same shape as ended: a resolved `other`.
-      return Object.assign({}, c, { other: c.userAId === userId ? c.userB : c.userA });
+      var other = c.userAId === userId ? c.userB : c.userA;
+      var bd = null;
+      try {
+        var mv = vectors[other.id];
+        if (myVector && mv) bd = calculateMatchScore(toArr(myVector), toArr(mv), myType || 'all').breakdown;
+      } catch (e) { bd = null; }
+      return Object.assign({}, c, { other: other, score: Math.round(c.compatScore || 0), breakdown: bd });
     });
     var ended = all.filter(function(c) { return !c.isActive && c.stage === 'ended'; }).map(function(c) {
       var iAmA = c.userAId === userId;
