@@ -1,6 +1,7 @@
 const prisma = require('../db');
 const { getLimits } = require('../services/plan-limits');
 const { getCircleStatus } = require('../services/circle-stages');
+const { calculateMatchScore } = require('./questions');
 
 async function circleRoutes(app) {
   // Get my circles
@@ -198,5 +199,91 @@ async function circleRoutes(app) {
     }
     return { status: 'vote_recorded', message: 'Vote recorded (' + votes.length + '/' + voters.length + ')', keepVotes: keepVotes, replaceVotes: replaceVotes };
   });
+
+  // ═══ Find or start a circle (seeded model) ═══
+  // A circle is anchored by its first member. New people join a forming circle
+  // if they score >= 40% against that anchor; otherwise they anchor a new one.
+  // Nobody is left with nothing, and each new anchor grows the pool for others.
+  app.post('/find', { preHandler: [app.authenticate] }, async (request) => {
+    var myId = request.user.id;
+    var CIRCLE_SIZE = 4;
+    var FLOOR = 40;
+
+    var me = await prisma.user.findUnique({
+      where: { id: myId },
+      select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true, alias: true },
+    });
+    if (!me || !me.matchVector || !me.matchVector.answers) {
+      return { error: 'Complete your 25 questions first so we can match you.', code: 'NO_ANSWERS' };
+    }
+
+    var plan = me.plan || 'free';
+    if (me.planExpiresAt && me.planExpiresAt < new Date()) plan = 'free';
+    var limits = getLimits(plan);
+    if (limits.circles === 0) {
+      return { error: 'Your plan does not include friend circles. Upgrade to Explorer or Inner Circle.', code: 'PLAN_LIMIT' };
+    }
+    if (limits.circles !== -1) {
+      var mine = await prisma.circleMember.count({ where: { userId: myId, isActive: true } });
+      if (mine >= limits.circles) {
+        return { error: 'You have reached your friend circle limit (' + limits.circles + ' on ' + plan + ' plan).', code: 'PLAN_LIMIT' };
+      }
+    }
+
+    var blockRows = await prisma.block.findMany({
+      where: { OR: [{ blockerId: myId }, { blockedId: myId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    var blockedIds = blockRows.map(function (b) { return b.blockerId === myId ? b.blockedId : b.blockerId; });
+
+    var forming = await prisma.circle.findMany({
+      where: { stage: 'forming', isActive: true },
+      include: { members: { where: { isActive: true }, orderBy: { joinedAt: 'asc' } } },
+    });
+
+    var toArr = function (m) {
+      return Object.keys(m).map(function (k) { return { questionId: k, answer: m[k].answer || m[k] }; });
+    };
+    var myAnswers = toArr(me.matchVector.answers);
+    var best = null;
+
+    for (var c of forming) {
+      if (c.members.length >= CIRCLE_SIZE) continue;
+      if (c.members.some(function (m) { return m.userId === myId; })) continue;
+      if (c.members.some(function (m) { return blockedIds.indexOf(m.userId) !== -1; })) continue;
+      var anchorId = c.members.length ? c.members[0].userId : null;
+      if (!anchorId) continue;
+      var anchor = await prisma.user.findUnique({ where: { id: anchorId }, select: { matchVector: true } });
+      if (!anchor || !anchor.matchVector || !anchor.matchVector.answers) continue;
+      var score = calculateMatchScore(myAnswers, toArr(anchor.matchVector.answers), me.connectionType || 'all').overall;
+      if (score >= FLOOR && (!best || score > best.score)) best = { circle: c, score: score };
+    }
+
+    if (best) {
+      await prisma.circleMember.create({
+        data: { circleId: best.circle.id, userId: myId, alias: me.alias || 'Member' },
+      });
+      var count = best.circle.members.length + 1;
+      // Nothing else moves a circle out of 'forming' - the journey starts here.
+      if (count >= CIRCLE_SIZE) {
+        await prisma.circle.update({ where: { id: best.circle.id }, data: { stage: 'chatting' } });
+      }
+      return {
+        status: 'joined', circleId: best.circle.id, members: count,
+        complete: count >= CIRCLE_SIZE, matchScore: best.score,
+        message: count >= CIRCLE_SIZE ? 'Your circle is complete!' : 'Joined a forming circle (' + count + ' of ' + CIRCLE_SIZE + ').',
+      };
+    }
+
+    var created = await prisma.circle.create({ data: { stage: 'forming' } });
+    await prisma.circleMember.create({
+      data: { circleId: created.id, userId: myId, alias: me.alias || 'Member' },
+    });
+    return {
+      status: 'anchored', circleId: created.id, members: 1, complete: false,
+      message: 'You are first in your circle. We will add compatible people as they join.',
+    };
+  });
+
 }
 module.exports = circleRoutes;
