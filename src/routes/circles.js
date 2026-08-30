@@ -251,11 +251,22 @@ async function circleRoutes(app) {
       if (c.members.length >= CIRCLE_SIZE) continue;
       if (c.members.some(function (m) { return m.userId === myId; })) continue;
       if (c.members.some(function (m) { return blockedIds.indexOf(m.userId) !== -1; })) continue;
-      var anchorId = c.members.length ? c.members[0].userId : null;
-      if (!anchorId) continue;
-      var anchor = await prisma.user.findUnique({ where: { id: anchorId }, select: { matchVector: true } });
-      if (!anchor || !anchor.matchVector || !anchor.matchVector.answers) continue;
-      var score = calculateMatchScore(myAnswers, toArr(anchor.matchVector.answers), me.connectionType || 'all').overall;
+      // Score against every member who has answers, not just the first. A circle
+      // whose earliest member never finished onboarding would otherwise be
+      // permanently unjoinable (Trippy Gang was exactly this).
+      if (!c.members.length) continue;
+      var rows = await prisma.user.findMany({
+        where: { id: { in: c.members.map(function (m) { return m.userId; }) } },
+        select: { id: true, matchVector: true },
+      });
+      var scores = [];
+      for (var r of rows) {
+        if (!r.matchVector || !r.matchVector.answers) continue;
+        scores.push(calculateMatchScore(myAnswers, toArr(r.matchVector.answers), me.connectionType || 'all').overall);
+      }
+      var scorable = scores.length;
+      if (!scorable) continue;
+      var score = Math.round(scores.reduce(function (a, b) { return a + b; }, 0) / scorable);
       if (score >= FLOOR && (!best || score > best.score)) best = { circle: c, score: score };
     }
 
