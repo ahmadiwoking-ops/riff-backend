@@ -296,5 +296,74 @@ async function circleRoutes(app) {
     };
   });
 
+
+  // ═══ Forming circles this user could join ═══
+  // Discovery without conscription: we surface circles you fit, you choose.
+  app.get('/suggestions', { preHandler: [app.authenticate] }, async (request) => {
+    var myId = request.user.id;
+    var CIRCLE_SIZE = 4;
+    var FLOOR = 40;
+
+    var me = await prisma.user.findUnique({
+      where: { id: myId },
+      select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true },
+    });
+    if (!me || !me.matchVector || !me.matchVector.answers) return { suggestions: [], code: 'NO_ANSWERS' };
+
+    var plan = me.plan || 'free';
+    if (me.planExpiresAt && me.planExpiresAt < new Date()) plan = 'free';
+    var limits = getLimits(plan);
+    if (limits.circles === 0) return { suggestions: [], code: 'PLAN_LIMIT' };
+    if (limits.circles !== -1) {
+      var mine = await prisma.circleMember.count({ where: { userId: myId, isActive: true } });
+      if (mine >= limits.circles) return { suggestions: [], code: 'PLAN_LIMIT', atLimit: true };
+    }
+
+    var blockRows = await prisma.block.findMany({
+      where: { OR: [{ blockerId: myId }, { blockedId: myId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    var blockedIds = blockRows.map(function (b) { return b.blockerId === myId ? b.blockedId : b.blockerId; });
+
+    var forming = await prisma.circle.findMany({
+      where: { stage: 'forming', isActive: true },
+      include: { members: { where: { isActive: true }, orderBy: { joinedAt: 'asc' }, include: { user: { select: { id: true, alias: true, avatarEmoji: true, avatarColour: true, trustScore: true, matchVector: true } } } } },
+    });
+
+    var toArr = function (m) {
+      return Object.keys(m).map(function (k) { return { questionId: k, answer: m[k].answer || m[k] }; });
+    };
+    var myAnswers = toArr(me.matchVector.answers);
+    var out = [];
+
+    for (var c of forming) {
+      if (!c.members.length || c.members.length >= CIRCLE_SIZE) continue;
+      if (c.members.some(function (m) { return m.userId === myId; })) continue;
+      if (c.members.some(function (m) { return blockedIds.indexOf(m.userId) !== -1; })) continue;
+      var scores = [];
+      for (var m2 of c.members) {
+        var mv = m2.user && m2.user.matchVector ? m2.user.matchVector.answers : null;
+        if (!mv) continue;
+        scores.push(calculateMatchScore(myAnswers, toArr(mv), me.connectionType || 'all').overall);
+      }
+      if (!scores.length) continue;
+      var avg = Math.round(scores.reduce(function (a, b) { return a + b; }, 0) / scores.length);
+      if (avg < FLOOR) continue;
+      out.push({
+        circleId: c.id,
+        name: c.name,
+        memberCount: c.members.length,
+        spacesLeft: CIRCLE_SIZE - c.members.length,
+        score: avg,
+        members: c.members.map(function (m3) {
+          return { id: m3.user.id, alias: m3.user.alias, avatarEmoji: m3.user.avatarEmoji, avatarColour: m3.user.avatarColour, trustScore: m3.user.trustScore };
+        }),
+      });
+    }
+
+    out.sort(function (a, b) { return b.score - a.score; });
+    return { suggestions: out, plan: plan };
+  });
+
 }
 module.exports = circleRoutes;
