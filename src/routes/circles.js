@@ -400,5 +400,53 @@ async function circleRoutes(app) {
     return { status: 'saved', name: updated.name };
   });
 
+
+  // ═══ Near Me ═══
+  // Same rules as naming: the anchor decides, and only while forming. Set
+  // after creation rather than at it, so a circle that is not filling can be
+  // opened up again.
+  app.post('/:id/near-me', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var on = (request.body || {}).nearMe === true;
+    var c = await prisma.circle.findUnique({
+      where: { id: circleId },
+      include: { members: { where: { isActive: true } } },
+    });
+    if (!c) return { error: 'Circle not found.' };
+    if (c.createdBy !== request.user.id) return { error: 'Only the person who started this circle can change this.', code: 'NOT_ANCHOR' };
+    if (c.stage !== 'forming' || c.members.length >= 4) return { error: 'Your circle is complete, so this can no longer change.', code: 'LOCKED' };
+
+    if (!on) {
+      var opened = await prisma.circle.update({ where: { id: circleId }, data: { nearMe: false, county: null } });
+      return { status: 'saved', nearMe: false, county: null };
+    }
+
+    var me = await prisma.user.findUnique({ where: { id: request.user.id }, select: { county: true } });
+    if (!me || !me.county) {
+      return { error: 'Set your location first so we know which area to match on.', code: 'NO_COUNTY' };
+    }
+    // Snapshot the county so the circle's catchment does not move if the
+    // anchor later changes where they live.
+    var updated = await prisma.circle.update({ where: { id: circleId }, data: { nearMe: true, county: me.county } });
+    return { status: 'saved', nearMe: true, county: updated.county };
+  });
+
+  // ═══ Delete a circle you started and are still alone in ═══
+  app.delete('/:id', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var c = await prisma.circle.findUnique({
+      where: { id: circleId },
+      include: { members: { where: { isActive: true } } },
+    });
+    if (!c) return { error: 'Circle not found.' };
+    if (c.createdBy !== request.user.id) return { error: 'Only the person who started this circle can delete it.', code: 'NOT_ANCHOR' };
+    // Once someone else has joined it is their circle too.
+    if (c.members.length > 1) return { error: 'Other people have joined, so this circle can no longer be deleted.', code: 'NOT_EMPTY' };
+    await prisma.message.deleteMany({ where: { circleId: circleId } });
+    await prisma.circleMember.deleteMany({ where: { circleId: circleId } });
+    await prisma.circle.delete({ where: { id: circleId } });
+    return { status: 'deleted' };
+  });
+
 }
 module.exports = circleRoutes;
