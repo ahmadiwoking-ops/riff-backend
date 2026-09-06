@@ -2,8 +2,26 @@ const prisma = require('../db');
 const { getLimits } = require('../services/plan-limits');
 
 async function messageRoutes(app) {
-  app.get('/connection/:connectionId', { preHandler: [app.authenticate] }, async (request) => {
-    return { messages: await prisma.message.findMany({ where: { connectionId: request.params.connectionId }, include: { sender: { select: { alias: true } } }, orderBy: { createdAt: 'asc' }, take: 100 }) };
+  app.get('/connection/:connectionId', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var connectionId = request.params.connectionId;
+    // connection membership: this route previously returned the whole
+    // conversation to anyone holding the id.
+    var conn = await prisma.connection.findUnique({ where: { id: connectionId }, select: { userAId: true, userBId: true, userAPhoto: true, userBPhoto: true } });
+    if (!conn) return reply.code(404).send({ error: 'Connection not found.' });
+    var isA = conn.userAId === request.user.id;
+    if (!isA && conn.userBId !== request.user.id) return reply.code(403).send({ error: 'You are not part of this connection.' });
+
+    var msgs = await prisma.message.findMany({ where: { connectionId: connectionId }, include: { sender: { select: { alias: true } } }, orderBy: { createdAt: 'asc' }, take: 100 });
+
+    // Photos are earned like faces: you see them once you have revealed.
+    var revealed = isA ? !!conn.userAPhoto : !!conn.userBPhoto;
+    if (!revealed) {
+      msgs = msgs.map(function (m) {
+        if (m.type !== 'photo' || m.senderId === request.user.id) return m;
+        return Object.assign({}, m, { type: 'photo_locked', content: '' });
+      });
+    }
+    return { messages: msgs, revealed: revealed };
   });
   app.get('/circle/:circleId', { preHandler: [app.authenticate] }, async (request, reply) => {
     var circleId = request.params.circleId;
