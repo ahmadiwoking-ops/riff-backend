@@ -226,7 +226,7 @@ async function circleRoutes(app) {
 
     var me = await prisma.user.findUnique({
       where: { id: myId },
-      select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true, alias: true },
+      select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true, alias: true, county: true },
     });
     if (!me || !me.matchVector || !me.matchVector.answers) {
       return { error: 'Complete your 25 questions first so we can match you.', code: 'NO_ANSWERS' };
@@ -266,6 +266,8 @@ async function circleRoutes(app) {
       if (c.members.length >= CIRCLE_SIZE) continue;
       if (c.members.some(function (m) { return m.userId === myId; })) continue;
       if (c.members.some(function (m) { return blockedIds.indexOf(m.userId) !== -1; })) continue;
+      // A Near Me circle only takes people from the county it was anchored in.
+      if (c.nearMe && c.county && c.county !== me.county) continue;
       // Score against every member who has answers, not just the first. A circle
       // whose earliest member never finished onboarding would otherwise be
       // permanently unjoinable (Trippy Gang was exactly this).
@@ -321,7 +323,7 @@ async function circleRoutes(app) {
 
     var me = await prisma.user.findUnique({
       where: { id: myId },
-      select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true },
+      select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true, county: true },
     });
     if (!me || !me.matchVector || !me.matchVector.answers) return { suggestions: [], code: 'NO_ANSWERS' };
 
@@ -355,6 +357,8 @@ async function circleRoutes(app) {
       if (!c.members.length || c.members.length >= CIRCLE_SIZE) continue;
       if (c.members.some(function (m) { return m.userId === myId; })) continue;
       if (c.members.some(function (m) { return blockedIds.indexOf(m.userId) !== -1; })) continue;
+      // A Near Me circle only takes people from the county it was anchored in.
+      if (c.nearMe && c.county && c.county !== me.county) continue;
       var scores = [];
       for (var m2 of c.members) {
         var mv = m2.user && m2.user.matchVector ? m2.user.matchVector.answers : null;
