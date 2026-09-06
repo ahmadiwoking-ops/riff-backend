@@ -156,7 +156,9 @@ async function circleRoutes(app) {
     var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
     var revealedCount = members.filter(function(m) { return m.selfiePhoto; }).length;
     var allRevealed = revealedCount === members.length;
-    if (allRevealed) await prisma.circle.update({ where: { id: circleId }, data: { revealedAt: new Date() } });
+    // Nothing else set the connected stage for circles - the strip showed it
+    // as the final step but the circle sat on reveal forever.
+    if (allRevealed) await prisma.circle.update({ where: { id: circleId }, data: { revealedAt: new Date(), stage: 'connected' } });
     return { status: 'revealed', revealedCount: revealedCount, total: members.length, allRevealed: allRevealed, message: 'You revealed! You can now see everyone else who has revealed.' };
   });
 
