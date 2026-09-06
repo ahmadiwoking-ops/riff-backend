@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { TOWNS, COUNTIES } = require('../services/uk-places');
 // Illustrated avatars. The picker fetches this list and /avatar validates
 // against it, so the two cannot drift apart. Keys match PNG filenames in the
 // app's src/assets/avatars/ folder — Metro is case-sensitive, so they must
@@ -51,12 +52,16 @@ async function userRoutes(app) {
   // ═══ Location shown on match cards ═══
   // Off by default and never inferred - see the IP geolocation in auth.js,
   // which is a separate admin-only signal and deliberately not used here.
+  app.get('/places', async () => {
+    return { towns: TOWNS, counties: COUNTIES };
+  });
+
   app.get('/location', { preHandler: [app.authenticate] }, async (request) => {
     var u = await prisma.user.findUnique({
       where: { id: request.user.id },
-      select: { area: true, country: true, shareLocation: true },
+      select: { area: true, county: true, country: true, shareLocation: true },
     });
-    return { area: u ? u.area : null, country: u ? u.country : null, shareLocation: u ? u.shareLocation : false };
+    return { area: u ? u.area : null, county: u ? u.county : null, country: u ? u.country : null, shareLocation: u ? u.shareLocation : false };
   });
 
   app.post('/location', { preHandler: [app.authenticate] }, async (request) => {
@@ -67,6 +72,12 @@ async function userRoutes(app) {
       if (a.length > 60) return { error: 'That area name is too long.' };
       data.area = a === '' ? null : a;
     }
+    if (body.county !== undefined) {
+      var cy = typeof body.county === 'string' ? body.county.trim() : '';
+      if (cy === '') data.county = null;
+      else if (COUNTIES.indexOf(cy) === -1) return { error: 'Unknown county.' };
+      else data.county = cy;
+    }
     if (body.country !== undefined) {
       var c = typeof body.country === 'string' ? body.country.trim().toUpperCase() : '';
       data.country = c === '' ? null : c.slice(0, 2);
@@ -74,7 +85,7 @@ async function userRoutes(app) {
     if (body.shareLocation !== undefined) data.shareLocation = body.shareLocation === true;
     if (!Object.keys(data).length) return { error: 'Nothing to update.' };
     var u = await prisma.user.update({ where: { id: request.user.id }, data: data });
-    return { status: 'saved', area: u.area, country: u.country, shareLocation: u.shareLocation };
+    return { status: 'saved', area: u.area, county: u.county, country: u.country, shareLocation: u.shareLocation };
   });
 
 }
