@@ -83,7 +83,20 @@ async function circleRoutes(app) {
     var member = await prisma.circleMember.create({
       data: { circleId: circleId, userId: myId, alias: request.user.alias || 'Member' },
     });
-    return { status: 'joined', member: member };
+
+    // Only /find advanced the stage, so a circle completed through the
+    // suggestions button stayed in 'forming' forever and its voice stage
+    // never became reachable.
+    var total = await prisma.circleMember.count({ where: { circleId: circleId, isActive: true } });
+    var advanced = false;
+    if (total >= 4) {
+      var cNow = await prisma.circle.findUnique({ where: { id: circleId }, select: { stage: true } });
+      if (cNow && cNow.stage === 'forming') {
+        await prisma.circle.update({ where: { id: circleId }, data: { stage: 'chatting' } });
+        advanced = true;
+      }
+    }
+    return { status: 'joined', member: member, members: total, complete: total >= 4, advanced: advanced };
   });
 
   // ═══ Circle flow status ═══
