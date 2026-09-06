@@ -9,7 +9,7 @@ async function safetyRoutes(app) {
   // cannot withdraw a report about someone who may then pressure them to.
   app.post('/report', { preHandler: [app.authenticate] }, async (request, reply) => {
     const reporterId = request.user.id;
-    const { targetUserId, reason, details, connectionId, alsoBlock } = request.body || {};
+    const { targetUserId, reason, details, connectionId, messageId, alsoBlock } = request.body || {};
     if (!targetUserId) return reply.code(400).send({ error: 'targetUserId is required' });
     if (targetUserId === reporterId) return reply.code(400).send({ error: 'You cannot report yourself' });
     if (!reason || REASONS.indexOf(reason) === -1) {
@@ -27,6 +27,13 @@ async function safetyRoutes(app) {
       return { status: 'already_reported', message: 'You have already reported this person. Our team is reviewing it.' };
     }
 
+    // A reported photo is ~200KB of base64 - far past triggerContent's 2000
+    // char cap - so record a reference the admin page can fetch instead.
+    var reportedMessage = null;
+    if (messageId) {
+      var msg = await prisma.message.findUnique({ where: { id: messageId }, select: { id: true, type: true, senderId: true, circleId: true, connectionId: true, createdAt: true } });
+      if (msg && msg.senderId === targetUserId) reportedMessage = msg;
+    }
     const severity = (reason === 'underage' || reason === 'safety_concern') ? 'high' : 'medium';
 
     await prisma.safetyFlag.create({
@@ -37,8 +44,13 @@ async function safetyRoutes(app) {
         subjectEmailSnapshot: target.email,
         flagType: reason,
         severity: severity,
-        triggerContent: details ? String(details).slice(0, 2000) : null,
-        connectionId: connectionId || null,
+        triggerContent: (function () {
+          var parts = [];
+          if (details) parts.push(String(details));
+          if (reportedMessage) parts.push('[reported message ' + reportedMessage.id + ' | type: ' + reportedMessage.type + ' | sent: ' + reportedMessage.createdAt.toISOString() + ']');
+          return parts.length ? parts.join(' ').slice(0, 2000) : null;
+        })(),
+        connectionId: connectionId || (reportedMessage ? reportedMessage.connectionId : null) || null,
         status: 'pending',
       },
     });
