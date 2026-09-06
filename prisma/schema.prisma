@@ -151,6 +151,7 @@ model Circle {
   id           String   @id @default(cuid())
   name         String?
   createdBy    String?  // anchor - may name the circle while it is forming
+  thumbnail    String?  // theme icon key chosen by the anchor
   nearMe       Boolean  @default(false)  // restrict joining to the anchor county
   county       String?  // snapshot of the anchor county when nearMe is set
   stage        String   @default("forming")

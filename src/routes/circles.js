@@ -452,5 +452,22 @@ async function circleRoutes(app) {
     return { status: 'deleted' };
   });
 
+
+  // ═══ Circle theme icon ═══
+  // Anchor only, but unlike the name this stays changeable at any stage - a
+  // name is the circle's identity, an icon is decoration, and a group that
+  // turns out to be a football circle should be able to say so.
+  var ICON_KEYS = ['friends','adventures','coffee','sports','gaming','movies','music','learning','fitness','travel','food','culture','mindfulness','arts','nature','pets','city','ideas','professional','community','photography','beach','campfire','exploration','socialising','growth','animals','crew'];
+  app.post('/:id/thumbnail', { preHandler: [app.authenticate] }, async (request) => {
+    var circleId = request.params.id;
+    var key = typeof (request.body || {}).thumbnail === 'string' ? request.body.thumbnail.trim() : '';
+    if (key !== '' && ICON_KEYS.indexOf(key) === -1) return { error: 'Unknown icon.' };
+    var c = await prisma.circle.findUnique({ where: { id: circleId }, select: { createdBy: true } });
+    if (!c) return { error: 'Circle not found.' };
+    if (c.createdBy !== request.user.id) return { error: 'Only the person who started this circle can change its icon.', code: 'NOT_ANCHOR' };
+    var updated = await prisma.circle.update({ where: { id: circleId }, data: { thumbnail: key === '' ? null : key } });
+    return { status: 'saved', thumbnail: updated.thumbnail };
+  });
+
 }
 module.exports = circleRoutes;
