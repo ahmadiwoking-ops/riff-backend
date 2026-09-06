@@ -5,8 +5,25 @@ async function messageRoutes(app) {
   app.get('/connection/:connectionId', { preHandler: [app.authenticate] }, async (request) => {
     return { messages: await prisma.message.findMany({ where: { connectionId: request.params.connectionId }, include: { sender: { select: { alias: true } } }, orderBy: { createdAt: 'asc' }, take: 100 }) };
   });
-  app.get('/circle/:circleId', { preHandler: [app.authenticate] }, async (request) => {
-    return { messages: await prisma.message.findMany({ where: { circleId: request.params.circleId }, include: { sender: { select: { alias: true } } }, orderBy: { createdAt: 'asc' }, take: 100 }) };
+  app.get('/circle/:circleId', { preHandler: [app.authenticate] }, async (request, reply) => {
+    var circleId = request.params.circleId;
+    // This route previously returned every message to anyone holding the id.
+    var me = await prisma.circleMember.findFirst({ where: { circleId: circleId, userId: request.user.id } });
+    if (!me) return reply.code(403).send({ error: 'You are not a member of this circle.' });
+
+    var msgs = await prisma.message.findMany({ where: { circleId: circleId }, include: { sender: { select: { alias: true } } }, orderBy: { createdAt: 'asc' }, take: 100 });
+
+    // Photos are earned like faces: you see them once you have revealed. The
+    // redaction has to happen here - hiding them client-side would still send
+    // the image over the wire.
+    var revealed = !!me.selfiePhoto;
+    if (!revealed) {
+      msgs = msgs.map(function (m) {
+        if (m.type !== 'photo' || m.senderId === request.user.id) return m;
+        return Object.assign({}, m, { type: 'photo_locked', content: '' });
+      });
+    }
+    return { messages: msgs, revealed: revealed };
   });
   app.post('/', { preHandler: [app.authenticate] }, async (request) => {
     const { connectionId, circleId, content, type } = request.body;
