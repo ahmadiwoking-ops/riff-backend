@@ -115,7 +115,7 @@ async function botConnectionRoutes(app) {
     const hasBotPlan = user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date());
     const hasAppPlan = paidPlans.includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date());
     if (!hasBotPlan && !hasAppPlan) {
-      return reply.code(403).send({ error: 'Bot Connection subscription required', code: 'NO_SUBSCRIPTION' });
+      return reply.code(403).send({ error: 'AI Companions subscription required', code: 'NO_SUBSCRIPTION' });
     }
 
     // Age-restricted personas require real ID verification, not just a subscription.

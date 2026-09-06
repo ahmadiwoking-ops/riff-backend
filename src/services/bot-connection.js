@@ -110,7 +110,7 @@ async function botConnectionRoutes(app) {
       (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date());
 
     if (!isActive) {
-      return reply.code(403).send({ error: 'Bot Connection subscription required', code: 'NO_SUBSCRIPTION' });
+      return reply.code(403).send({ error: 'AI Companions subscription required', code: 'NO_SUBSCRIPTION' });
     }
 
     // Check usage limit
