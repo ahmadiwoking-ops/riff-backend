@@ -18,6 +18,7 @@ model User {
   connectionType  String
   country         String?
   area            String?  // user-stated city or region
+  county          String?  // derived from the town picker, used for Near Me circles
   shareLocation   Boolean  @default(false)  // off unless the user opts in
   language        String?  @default("en")
   phone           String?  @unique
@@ -150,6 +151,8 @@ model Circle {
   id           String   @id @default(cuid())
   name         String?
   createdBy    String?  // anchor - may name the circle while it is forming
+  nearMe       Boolean  @default(false)  // restrict joining to the anchor county
+  county       String?  // snapshot of the anchor county when nearMe is set
   stage        String   @default("forming")
   currentRound Int      @default(0)
   isActive     Boolean  @default(true)
