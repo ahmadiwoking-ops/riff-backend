@@ -21,7 +21,6 @@ const PREF_FOR_TYPE = {
   circle_reveal: 'circleUpdates',
   game_started: 'gameInvites',
   match_nudge: 'matchFound',
-  weekly_digest: 'weeklyDigest',
   promotion: 'promotions',
 };
 
@@ -31,7 +30,6 @@ const DEFAULT_PREFS = {
   circleUpdates: true,
   gameInvites: true,
   matchFound: true,
-  weeklyDigest: true,
   promotions: false,
 };
 
