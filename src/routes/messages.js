@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { notify } = require('../services/push');
 const { getLimits } = require('../services/plan-limits');
 
 async function messageRoutes(app) {
@@ -72,7 +73,26 @@ async function messageRoutes(app) {
         if (blockedPair) return { message: null, delivered: false };
       }
     }
+    var priorCount = 0;
+    if (connectionId && !circleId) {
+      priorCount = await prisma.message.count({ where: { connectionId: connectionId } });
+    }
+
     const message = await prisma.message.create({ data: { connectionId, circleId, senderId: request.user.id, content, type: type || 'text' }, include: { sender: { select: { alias: true } } } });
+
+    if (connectionId && !circleId && priorCount === 0) {
+      // Fire and forget: a failed push must never fail the message send.
+      (async function () {
+        try {
+          var conn = await prisma.connection.findUnique({ where: { id: connectionId }, select: { userAId: true, userBId: true } });
+          if (!conn) return;
+          var recipient = conn.userAId === request.user.id ? conn.userBId : conn.userAId;
+          var sender = await prisma.user.findUnique({ where: { id: request.user.id }, select: { alias: true } });
+          var who = sender ? sender.alias : 'Someone';
+          await notify(recipient, 'first_message', who + ' said hello', 'Your new connection has sent you a message.', { connectionId: connectionId, screen: 'deep' });
+        } catch (e) { /* already logged in notify */ }
+      })();
+    }
     return { message };
   });
 

@@ -75,6 +75,10 @@ async function start() {
   const port = parseInt(process.env.PORT || '3000');
   await app.listen({ port, host: '0.0.0.0' });
   app.log.info('Riff API v2.0.0 running on port ' + port);
+
+  // Started after the API is listening. In-process, so it must move to its
+  // own service if this is ever scaled to more than one instance.
+  require('./services/match-nudge').start();
 }
 
 process.on('SIGTERM', async () => { await prisma.$disconnect(); process.exit(0); });

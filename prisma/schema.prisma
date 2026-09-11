@@ -42,6 +42,7 @@ model User {
   planExpiresAt   DateTime?
   matchVector       Json?
   pushToken       String?
+  notificationPrefs Json?  // per-type opt-outs; null means every default is on
   isActive        Boolean  @default(true)
   isBanned        Boolean  @default(false)
   banReason       String?
