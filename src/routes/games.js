@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { notifyMany } = require('../services/push');
 const { generateGame, generateAllRounds } = require('../services/games');
 
 var BOT_POOL = {
@@ -138,6 +139,21 @@ async function gameRoutes(app) {
     firstRound.memberCount = circle ? circle.members.length : 4;
     if (gameType === 'two_truths') firstRound.phase = 'submit';
     var game = await prisma.circleGame.create({ data: { circleId: circleId, gameType: gameType, data: firstRound, startedBy: request.user.id, results: { allRounds: allRounds } } });
+
+    // Everyone but the person who started it.
+    (async function () {
+      try {
+        if (!circle || !circle.members) return;
+        var ids = circle.members.filter(function (m) { return m.userId !== request.user.id; }).map(function (m) { return m.userId; });
+        if (!ids.length) return;
+        var names = { would_you_rather: 'Would You Rather', two_truths: 'Two Truths One Lie', hot_takes: 'Hot Takes', this_or_that: 'This or That', desert_island: 'Desert Island', deeper_questions: 'Deeper Questions', scenario_challenge: 'Scenario Challenge', memory_lane: 'Memory Lane' };
+        var label = names[gameType] || 'a game';
+        var starter = await prisma.user.findUnique({ where: { id: request.user.id }, select: { alias: true } });
+        var who = starter ? starter.alias : 'Someone';
+        await notifyMany(ids, 'game_started', who + ' started ' + label, 'Your circle is playing. Jump in.', { circleId: circleId, screen: 'circle' });
+      } catch (e) {}
+    })();
+
     return { game: game };
   });
 

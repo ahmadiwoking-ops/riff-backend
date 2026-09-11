@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { notifyMany } = require('../services/push');
 const { getLimits } = require('../services/plan-limits');
 const { getCircleStatus } = require('../services/circle-stages');
 const { calculateMatchScore } = require('./questions');
@@ -96,6 +97,21 @@ async function circleRoutes(app) {
         advanced = true;
       }
     }
+    // Goes to the people already in the circle, not the person who just joined.
+    (async function () {
+      try {
+        var others = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true, userId: { not: myId } }, select: { userId: true } });
+        var ids = others.map(function (o) { return o.userId; });
+        var me2 = await prisma.user.findUnique({ where: { id: myId }, select: { alias: true } });
+        var who = me2 ? me2.alias : 'Someone';
+        if (total >= 4) {
+          await notifyMany(ids.concat([myId]), 'circle_complete', 'Your circle is complete', 'All four of you are in. Time to say hello.', { circleId: circleId, screen: 'circle' });
+        } else {
+          await notifyMany(ids, 'circle_joined', who + ' joined your circle', 'You are now ' + total + ' of 4.', { circleId: circleId, screen: 'circle' });
+        }
+      } catch (e) {}
+    })();
+
     return { status: 'joined', member: member, members: total, complete: total >= 4, advanced: advanced };
   });
 
@@ -159,6 +175,18 @@ async function circleRoutes(app) {
     // Nothing else set the connected stage for circles - the strip showed it
     // as the final step but the circle sat on reveal forever.
     if (allRevealed) await prisma.circle.update({ where: { id: circleId }, data: { revealedAt: new Date(), stage: 'connected' } });
+    // Only people who have already revealed are told - anyone who has not
+    // cannot see the photo anyway, and nudging them would be pressure.
+    (async function () {
+      try {
+        var seen = members.filter(function (m) { return m.selfiePhoto && m.userId !== request.user.id; }).map(function (m) { return m.userId; });
+        if (!seen.length) return;
+        var meR = await prisma.user.findUnique({ where: { id: request.user.id }, select: { alias: true } });
+        var whoR = meR ? meR.alias : 'Someone';
+        await notifyMany(seen, 'circle_reveal', whoR + ' has revealed', allRevealed ? 'Everyone in your circle has now shared a selfie.' : 'You can see them in your circle.', { circleId: circleId, screen: 'circle' });
+      } catch (e) {}
+    })();
+
     return { status: 'revealed', revealedCount: revealedCount, total: members.length, allRevealed: allRevealed, message: 'You revealed! You can now see everyone else who has revealed.' };
   });
 
