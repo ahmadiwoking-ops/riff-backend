@@ -1,4 +1,9 @@
 const prisma = require('../db');
+const STAGE_ORDER = ['forming', 'chatting', 'questions', 'voice', 'reveal', 'connected'];
+function isBefore(current, target) {
+  var a = STAGE_ORDER.indexOf(current), b = STAGE_ORDER.indexOf(target);
+  return a !== -1 && b !== -1 && a < b;
+}
 const { notifyMany } = require('../services/push');
 const { getLimits } = require('../services/plan-limits');
 const { getCircleStatus } = require('../services/circle-stages');
@@ -129,7 +134,11 @@ async function circleRoutes(app) {
     var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
     var allIn = members.length > 0 && members.every(function(m) { return m.voiceOptIn; });
     if (allIn) {
-      await prisma.circle.update({ where: { id: circleId }, data: { voiceStageOpen: true, stage: 'voice' } });
+      var cV = await prisma.circle.findUnique({ where: { id: circleId }, select: { stage: true } });
+      await prisma.circle.update({
+        where: { id: circleId },
+        data: isBefore(cV && cV.stage, 'voice') ? { voiceStageOpen: true, stage: 'voice' } : { voiceStageOpen: true },
+      });
       return { status: 'voice_open', message: 'Everyone opted in — voice stage is now open!', allIn: true };
     }
     var optedIn = members.filter(function(m) { return m.voiceOptIn; }).length;
@@ -148,7 +157,11 @@ async function circleRoutes(app) {
     var members = await prisma.circleMember.findMany({ where: { circleId: circleId, isActive: true } });
     var allQualified = members.length > 0 && members.every(function(m) { return m.textCount >= 3 && m.voiceCount >= 3; });
     if (allQualified) {
-      await prisma.circle.update({ where: { id: circleId }, data: { revealReady: true, stage: 'reveal' } });
+      var cC = await prisma.circle.findUnique({ where: { id: circleId }, select: { stage: true } });
+      await prisma.circle.update({
+        where: { id: circleId },
+        data: isBefore(cC && cC.stage, 'reveal') ? { revealReady: true, stage: 'reveal' } : { revealReady: true },
+      });
     }
     return { textCount: updated.textCount, voiceCount: updated.voiceCount, revealReady: allQualified };
   });
