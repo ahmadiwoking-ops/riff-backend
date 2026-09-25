@@ -21,7 +21,12 @@ async function start() {
   const app = Fastify({ logger: true, trustProxy: true, serverFactory: (handler) => { httpServer.on('request', handler); return httpServer; } });
 
   await app.register(cors, { origin: true, credentials: true });
-  await app.register(jwt, { secret: process.env.JWT_SECRET || 'riff-jwt-secret-2026', sign: { expiresIn: '7d' } });
+  // The old fallback is in this repo history, so anyone could forge a token
+  // for any account. Fail loudly instead of silently trusting a known value.
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET is not set, or is shorter than 32 characters.');
+  }
+  await app.register(jwt, { secret: process.env.JWT_SECRET, sign: { expiresIn: '7d' } });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
