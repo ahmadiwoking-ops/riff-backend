@@ -454,3 +454,12 @@ model PersonaMemory {
   createdAt    DateTime @default(now())
   @@unique([userId, persona])
 }
+
+model WaitingList {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  source    String?  // which page or banner they came from
+  notified  Boolean  @default(false)  // set when the launch email goes out
+  createdAt DateTime @default(now())
+  @@index([notified])
+}

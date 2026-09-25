@@ -49,6 +49,7 @@ async function start() {
   app.register(require('./routes/bot'), { prefix: '/api/bot' });
   app.register(require('./routes/admin'), { prefix: '/api/admin' });
   app.register(require('./routes/notifications'), { prefix: '/api/notifications' });
+  app.register(require('./routes/waitlist'), { prefix: '/api/waitlist' });
   app.register(require('./routes/subscriptions'), { prefix: '/api/subscriptions' });
   app.register(require('./routes/verification'), { prefix: '/api/verification' });
   app.register(require('./routes/bot-connection'), { prefix: '/api/bot-connection' });
