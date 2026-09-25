@@ -5,7 +5,25 @@ try { Anthropic = require('@anthropic-ai/sdk'); } catch {}
 const client = process.env.ANTHROPIC_API_KEY && Anthropic ? new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 
 async function adminRoutes(app) {
-  app.get('/stats', { preHandler: [app.authenticate] }, async () => {
+  // ADMIN_USER_IDS is a comma-separated list of user ids. Kept in the
+  // environment rather than the database so admin cannot be granted by a
+  // row edit, and so it is obvious who has access.
+  function adminIds() {
+    return String(process.env.ADMIN_USER_IDS || '')
+      .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+  async function requireAdmin(request, reply) {
+    var ids = adminIds();
+    if (!ids.length) {
+      request.log.error('ADMIN_USER_IDS is not set - refusing all admin access');
+      return reply.code(503).send({ error: 'Admin access is not configured.' });
+    }
+    if (ids.indexOf(request.user.id) === -1) {
+      request.log.warn({ userId: request.user.id, route: request.url }, 'non-admin attempted an admin route');
+      return reply.code(403).send({ error: 'Not permitted.' });
+    }
+  }
+  app.get('/stats', { preHandler: [app.authenticate, requireAdmin] }, async () => {
     const [totalUsers, activeUsers, totalConnections, activeCircles, pendingFlags, paidUsers] = await Promise.all([
       prisma.user.count(), prisma.user.count({ where: { lastActiveAt: { gte: new Date(Date.now() - 86400000) } } }),
       prisma.connection.count({ where: { isActive: true, isPractice: false } }), prisma.circle.count({ where: { isActive: true } }),
@@ -14,7 +32,7 @@ async function adminRoutes(app) {
     return { totalUsers, activeUsers24h: activeUsers, activeConnections: totalConnections, activeCircles, pendingFlags, paidUsers };
   });
 
-  app.get('/flags', { preHandler: [app.authenticate] }, async () => {
+  app.get('/flags', { preHandler: [app.authenticate, requireAdmin] }, async () => {
     var rows = await prisma.safetyFlag.findMany({ where: { status: 'pending' }, include: { user: { select: { id: true, alias: true, trustScore: true } } }, orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }], take: 50 });
     // user can be null when the reported account has since been deleted —
     // fall back to the snapshot taken at report time so the record stays useful.
@@ -32,7 +50,7 @@ async function adminRoutes(app) {
     }) };
   });
 
-  app.post('/flags/:id/resolve', { preHandler: [app.authenticate] }, async (request) => {
+  app.post('/flags/:id/resolve', { preHandler: [app.authenticate, requireAdmin] }, async (request) => {
     const { action, notes } = request.body;
     const flag = await prisma.safetyFlag.update({ where: { id: request.params.id }, data: { status: 'resolved', reviewedBy: request.user.id, reviewNotes: notes, resolvedAt: new Date() } });
     if (action === 'ban') await prisma.user.update({ where: { id: flag.userId }, data: { isBanned: true, banReason: notes } });
@@ -40,7 +58,7 @@ async function adminRoutes(app) {
     return { flag, action };
   });
 
-  app.get('/users', { preHandler: [app.authenticate] }, async (request) => {
+  app.get('/users', { preHandler: [app.authenticate, requireAdmin] }, async (request) => {
     const { search, page } = request.query;
     const where = search ? { OR: [{ alias: { contains: search } }, { email: { contains: search } }] } : {};
     return { users: await prisma.user.findMany({ where, select: {
@@ -54,18 +72,18 @@ async function adminRoutes(app) {
   });
 
   // ═══ User Management ═══
-  app.post('/users/:id/ban', { preHandler: [app.authenticate] }, async (request) => {
+  app.post('/users/:id/ban', { preHandler: [app.authenticate, requireAdmin] }, async (request) => {
     const { reason } = request.body || {};
     await prisma.user.update({ where: { id: request.params.id }, data: { isBanned: true, banReason: reason || 'Banned by admin' } });
     return { status: 'banned', userId: request.params.id };
   });
 
-  app.post('/users/:id/unban', { preHandler: [app.authenticate] }, async (request) => {
+  app.post('/users/:id/unban', { preHandler: [app.authenticate, requireAdmin] }, async (request) => {
     await prisma.user.update({ where: { id: request.params.id }, data: { isBanned: false, banReason: null } });
     return { status: 'unbanned', userId: request.params.id };
   });
 
-  app.post('/users/:id/delete', { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post('/users/:id/delete', { preHandler: [app.authenticate, requireAdmin] }, async (request, reply) => {
     const userId = request.params.id;
     try {
       // Get all connections involving this user
@@ -115,7 +133,7 @@ async function adminRoutes(app) {
   });
 
   // ═══ Content Studio: proxy to Anthropic API ═══
-  app.post('/generate-content', { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post('/generate-content', { preHandler: [app.authenticate, requireAdmin] }, async (request, reply) => {
     if (!client) {
       return reply.code(500).send({ error: 'ANTHROPIC_API_KEY not configured on the server' });
     }
