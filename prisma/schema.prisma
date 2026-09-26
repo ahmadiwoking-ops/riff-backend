@@ -460,6 +460,9 @@ model WaitingList {
   email     String   @unique
   source    String?  // which page or banner they came from
   notified  Boolean  @default(false)  // set when the launch email goes out
+  unsubToken String? @unique  // one-click opt-out, required for marketing email
+  unsubbed   Boolean @default(false)
+  lastError  String?  // why the last send failed, if it did
   createdAt DateTime @default(now())
   @@index([notified])
 }
