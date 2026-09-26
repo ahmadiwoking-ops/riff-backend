@@ -43,6 +43,7 @@ model User {
   matchVector       Json?
   pushToken       String?
   notificationPrefs Json?  // per-type opt-outs; null means every default is on
+  debates           Debate[]
   isActive        Boolean  @default(true)
   isBanned        Boolean  @default(false)
   banReason       String?
@@ -465,4 +466,38 @@ model WaitingList {
   lastError  String?  // why the last send failed, if it did
   createdAt DateTime @default(now())
   @@index([notified])
+}
+
+model Debate {
+  id            String   @id @default(cuid())
+  userId        String
+  persona       String   // sameer | rosa | dev | vera | orin
+  topic         String
+  userPosition  String   // what the user is arguing for
+  aiPosition    String   // the side the debater takes
+  topicSource   String   @default("user")  // user | suggested
+  status        String   @default("active") // active | judging | judged | abandoned
+  exchangeCount Int      @default(0)  // user messages only
+  // Rolling summary of everything older than the live window, so a long
+  // debate does not cost more per turn than a short one.
+  summary       String?
+  summarisedTo  Int      @default(0)  // exchanges already folded into summary
+  verdict       Json?    // Arbiter output, kept so it can be re-read
+  endedReason   String?  // finished | user_ended | limit | conduct
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id])
+  messages      DebateMessage[]
+  @@index([userId, status])
+}
+
+model DebateMessage {
+  id        String   @id @default(cuid())
+  debateId  String
+  role      String   // user | ai | system
+  content   String
+  viaVoice  Boolean  @default(false)  // transcribed rather than typed
+  createdAt DateTime @default(now())
+  debate    Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  @@index([debateId, createdAt])
 }
