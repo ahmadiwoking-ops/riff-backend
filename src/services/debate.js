@@ -73,6 +73,7 @@ async function updateSummary(debate, allMessages) {
     const res = await c.chat.completions.create({
       model: KIMI_MODEL,
       max_tokens: 700,
+      extra_body: { thinking: { type: 'disabled' } },
       messages: [
         {
           role: 'system',
@@ -124,6 +125,7 @@ async function debateReply(debate, allMessages) {
       model: KIMI_MODEL,
       max_tokens: 900,
       temperature: 0.8,
+      extra_body: { thinking: { type: 'disabled' } },
       messages: msgs,
     });
     const text = res.choices[0].message.content.trim();
@@ -168,6 +170,7 @@ async function judgeDebate(debate, allMessages) {
       model: KIMI_MODEL,
       max_tokens: 1400,
       temperature: 0.3,   // a judge should be consistent
+      extra_body: { thinking: { type: 'disabled' } },
       messages: [
         { role: 'system', content: ARBITER_PROMPT },
         { role: 'user', content: body },
@@ -204,6 +207,7 @@ async function suggestTopics(personaKey) {
       model: KIMI_MODEL,
       max_tokens: 400,
       temperature: 1.0,
+      extra_body: { thinking: { type: 'disabled' } },
       messages: [
         {
           role: 'system',
