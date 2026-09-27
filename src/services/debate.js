@@ -141,6 +141,7 @@ async function updateSummary(debate, allMessages) {
     const res = await c.chat.completions.create({
       model: KIMI_MODEL,
       max_tokens: 2000,
+      temperature: 0.6,   // non-thinking mode only accepts 0.6
       thinking: THINKING_OFF,
       messages: [
         {
