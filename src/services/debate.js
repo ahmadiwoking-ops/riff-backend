@@ -53,6 +53,25 @@ function parseVerdict(text) {
     improve: field("IMPROVE"),
   };
 }
+/** The model narrates its own planning before answering. That text must never
+ *  reach the user - better to fail and let them retry than to show notes. */
+var DELIB_MARKERS = [
+  /\bI should (respond|address|argue|acknowledge|point out|concede|note)\b/i,
+  /\bI (will|shall) (argue|respond|address|say|make)\b/i,
+  /\bthe user('s| is| says| wants| seems| claims| argues)\b/i,
+  /\bas (Sameer|Rosa|Dev|Vera|Orin),? I\b/i,
+  /\bmy (task|job|goal|response should)\b/i,
+  /\b(Wait|Hmm|Okay|Let me think)\s*[-,\u2014]/i,
+  /\bI need to (respond|address|be|make|argue)\b/i,
+  /\btheir (argument|claim) (seems|appears) to be\b/i,
+];
+function looksLikeDeliberation(t) {
+  if (!t) return true;
+  for (var i = 0; i < DELIB_MARKERS.length; i++) {
+    if (DELIB_MARKERS[i].test(t)) return true;
+  }
+  return false;
+}
 function readReply(res) {
   var m = (res && res.choices && res.choices[0] && res.choices[0].message) || {};
   var t = (m.content || "").trim();
@@ -145,7 +164,7 @@ async function updateSummary(debate, allMessages) {
 }
 
 /** One debate turn. Returns the AI's reply. */
-async function debateReply(debate, allMessages) {
+async function debateReply(debate, allMessages, _retry) {
   const c = client();
   if (!c) return { ok: false, reason: 'AI is not configured.' };
 
@@ -174,6 +193,14 @@ async function debateReply(debate, allMessages) {
     });
     const text = readReply(res);
     if (!text) return { ok: false, reason: 'No reply came back.' };
+    if (looksLikeDeliberation(text) && !_retry) {
+      console.warn('[debate] deliberation returned, retrying once');
+      return debateReply(debate, allMessages, true);
+    }
+    if (looksLikeDeliberation(text)) {
+      console.error('[debate] got deliberation instead of a reply:', text.slice(0, 160));
+      return { ok: false, reason: 'That did not come through properly. Send it again.' };
+    }
     return { ok: true, text: text };
   } catch (err) {
     console.error('[debate] reply failed:', err && err.message);
