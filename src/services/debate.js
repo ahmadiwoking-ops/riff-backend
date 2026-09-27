@@ -192,7 +192,7 @@ async function debateReply(debate, allMessages, _retry) {
     const res = await c.chat.completions.create({
       model: KIMI_MODEL,
       max_tokens: 3000,
-      temperature: 1,   // kimi-k2.6 rejects anything else
+      temperature: 0.6,   // non-thinking mode only accepts 0.6
       thinking: THINKING_OFF,
       messages: msgs,
     });
@@ -251,7 +251,7 @@ async function judgeDebate(debate, allMessages) {
     const res = await c.chat.completions.create({
       model: KIMI_MODEL,
       max_tokens: 4000,
-      temperature: 1,   // kimi-k2.6 rejects anything else
+      temperature: 0.6,   // non-thinking mode only accepts 0.6
       thinking: THINKING_OFF,
       messages: [
         { role: 'system', content: ARBITER_PROMPT },
@@ -283,7 +283,7 @@ async function suggestTopics(personaKey) {
     const res = await c.chat.completions.create({
       model: KIMI_MODEL,
       max_tokens: 1500,
-      temperature: 1,
+      temperature: 0.6,   // non-thinking mode only accepts 0.6
       thinking: THINKING_OFF,
       messages: [
         {
