@@ -35,7 +35,8 @@ async function botConnectionRoutes(app) {
 
     const usage = await checkUsage(request.user.id);
     const isPaidStatus = (user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date())) || (['bot_connection','explorer','inner_circle'].includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date()));
-    const limit = (isPaidStatus ? 500 : 50) + (usage.bonusMessages || 0);
+    // Credits already spent on debates are no longer available for chat.
+    const limit = (isPaidStatus ? 500 : 50) + Math.max(0, (usage.bonusMessages || 0) - (usage.debateSpend || 0));
     const remaining = Math.max(0, limit - usage.messageCount);
 
     return {
@@ -128,7 +129,7 @@ async function botConnectionRoutes(app) {
 
     // Check usage limit
     const usage = await checkUsage(request.user.id);
-    const effectiveLimit = 500 + (usage.bonusMessages || 0);
+    const effectiveLimit = 500 + Math.max(0, (usage.bonusMessages || 0) - (usage.debateSpend || 0));
     if (usage.messageCount >= effectiveLimit) {
       return reply.code(429).send({ error: 'Message limit reached (' + usage.messageCount + '/' + effectiveLimit + '). Buy more credits or wait for reset.', code: 'LIMIT_REACHED' });
     }

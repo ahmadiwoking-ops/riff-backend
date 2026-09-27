@@ -39,7 +39,7 @@ async function debateRoutes(app) {
     const used = await debateMessagesUsed(request.user.id);
     const freeLeft = Math.max(0, FREE_DEBATE_MESSAGES - used);
     const usage = await monthUsage(request.user.id);
-    const credits = Math.max(0, usage.bonusMessages - usage.messageCount);
+    const credits = Math.max(0, usage.bonusMessages - (usage.debateSpend || 0));
     return {
       freeLeft,
       credits,
@@ -147,7 +147,7 @@ async function debateRoutes(app) {
     let usage = null;
     if (!usingFree) {
       usage = await monthUsage(request.user.id);
-      const credits = usage.bonusMessages - usage.messageCount;
+      const credits = usage.bonusMessages - (usage.debateSpend || 0);
       if (credits < CREDITS_PER_MESSAGE) {
         return reply.code(402).send({
           error: 'You are out of debate credits.',
@@ -201,7 +201,7 @@ async function debateRoutes(app) {
     if (!usingFree && usage) {
       await prisma.botConnectionUsage.update({
         where: { id: usage.id },
-        data: { messageCount: { increment: CREDITS_PER_MESSAGE } },
+        data: { debateSpend: { increment: CREDITS_PER_MESSAGE } },
       });
     }
 
