@@ -132,7 +132,7 @@ async function debateRoutes(app) {
     let text = typeof body.content === 'string' ? body.content.trim() : '';
     let viaVoice = false;
     if (!text && body.audio) {
-      const tr = await debateSvc.transcribe(body.audio);
+      const tr = await debateSvc.transcribe(body.audio, body.ext);
       if (!tr.ok) return reply.code(400).send({ error: tr.reason });
       text = tr.text;
       viaVoice = true;

@@ -156,12 +156,18 @@ function openaiClient() {
 }
 
 /** Speech to text. The user may speak; the debater always replies in writing. */
-async function transcribe(base64Audio) {
+// Whisper accepts these and rejects everything else. Android and iOS do not
+// always produce the same container, so the app tells us which it made.
+var ALLOWED_AUDIO = ['flac','m4a','mp3','mp4','mpeg','mpga','oga','ogg','wav','webm'];
+
+async function transcribe(base64Audio, ext) {
   const oa = openaiClient();
   if (!oa) return { ok: false, reason: 'OPENAI_API_KEY is not set' };
   try {
     const buf = Buffer.from(base64Audio, 'base64');
-    const file = new File([buf], 'speech.m4a', { type: 'audio/m4a' });
+    var e = String(ext || 'm4a').toLowerCase();
+    if (ALLOWED_AUDIO.indexOf(e) === -1) e = 'm4a';
+    const file = new File([buf], 'speech.' + e, { type: 'audio/' + e });
     const res = await oa.audio.transcriptions.create({ file: file, model: 'whisper-1', response_format: 'verbose_json' });
     const text = (res && res.text) ? res.text.trim() : '';
     if (!text) return { ok: false, reason: 'Nothing was heard in that recording.' };
