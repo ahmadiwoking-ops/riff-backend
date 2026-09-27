@@ -128,6 +128,7 @@ async function debateReply(debate, allMessages) {
       extra_body: { thinking: { type: 'disabled' } },
       messages: msgs,
     });
+    console.log('[debate] raw choice: ' + JSON.stringify(res.choices[0]).slice(0, 600));
     const text = res.choices[0].message.content.trim();
     if (!text) return { ok: false, reason: 'No reply came back.' };
     return { ok: true, text: text };
