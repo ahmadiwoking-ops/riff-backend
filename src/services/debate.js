@@ -123,12 +123,12 @@ async function debateReply(debate, allMessages) {
   try {
     const res = await c.chat.completions.create({
       model: KIMI_MODEL,
-      max_tokens: 900,
+      max_tokens: 3000,
       temperature: 1,   // kimi-k2.6 rejects anything else
       extra_body: { thinking: { type: 'disabled' } },
       messages: msgs,
     });
-    console.log('[debate] raw choice: ' + JSON.stringify(res.choices[0]).slice(0, 600));
+    console.log('[debate] raw choice: ' + JSON.stringify(res.choices[0]).slice(-1200));
     const text = res.choices[0].message.content.trim();
     if (!text) return { ok: false, reason: 'No reply came back.' };
     return { ok: true, text: text };
