@@ -476,6 +476,7 @@ model Debate {
   userPosition  String   // what the user is arguing for
   aiPosition    String   // the side the debater takes
   topicSource   String   @default("user")  // user | suggested
+  language      String?  // detected from the first message, so every turn can be told
   status        String   @default("active") // active | judging | judged | abandoned
   exchangeCount Int      @default(0)  // user messages only
   // Rolling summary of everything older than the live window, so a long

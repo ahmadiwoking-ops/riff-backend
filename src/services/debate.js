@@ -72,6 +72,31 @@ function looksLikeDeliberation(t) {
   }
   return false;
 }
+/** Rough script detection, enough to tell the debater which language to
+ *  use. Returns null when unsure - a wrong guess is worse than none. */
+function detectLanguage(text) {
+  if (!text) return null;
+  var t = String(text);
+  var checks = [
+    [/[\u0600-\u06FF\u0750-\u077F]/, "Urdu or Arabic"],
+    [/[\u0900-\u097F]/, "Hindi"],
+    [/[\u0980-\u09FF]/, "Bengali"],
+    [/[\u0A00-\u0A7F]/, "Punjabi"],
+    [/[\u0E00-\u0E7F]/, "Thai"],
+    [/[\u4E00-\u9FFF]/, "Chinese"],
+    [/[\u3040-\u30FF]/, "Japanese"],
+    [/[\uAC00-\uD7AF]/, "Korean"],
+    [/[\u0400-\u04FF]/, "Russian"],
+    [/[\u0370-\u03FF]/, "Greek"],
+    [/[\u05D0-\u05EA]/, "Hebrew"],
+  ];
+  for (var i = 0; i < checks.length; i++) {
+    var m = t.match(new RegExp(checks[i][0].source, "g"));
+    // A few stray characters are not enough - look for real presence.
+    if (m && m.length >= Math.max(3, t.length * 0.1)) return checks[i][1];
+  }
+  return null;
+}
 function readReply(res) {
   var m = (res && res.choices && res.choices[0] && res.choices[0].message) || {};
   var t = (m.content || "").trim();
@@ -315,6 +340,7 @@ async function suggestTopics(personaKey) {
 }
 
 module.exports = {
+  detectLanguage,
   transcribe,
   debateReply,
   judgeDebate,

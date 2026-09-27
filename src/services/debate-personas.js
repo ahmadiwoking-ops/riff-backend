@@ -310,7 +310,7 @@ function listDebaters() {
 }
 
 /** Full system prompt for a debate turn. */
-function buildDebatePrompt(debater, topic, userPosition, aiPosition, summary) {
+function buildDebatePrompt(debater, topic, userPosition, aiPosition, summary, language) {
   const parts = [
     debater.prompt,
     '',
@@ -320,6 +320,7 @@ function buildDebatePrompt(debater, topic, userPosition, aiPosition, summary) {
     'Topic: ' + topic,
     'They are arguing: ' + userPosition,
     'You are arguing: ' + aiPosition,
+    language ? ('They are writing in ' + language + '. Write your reply in ' + language + '.') : '',
     '',
     'You hold your side sincerely and argue it as well as it can be argued.',
     'That does not mean refusing to concede individual points - it means not',
@@ -328,7 +329,7 @@ function buildDebatePrompt(debater, topic, userPosition, aiPosition, summary) {
   if (summary) {
     parts.push('', 'EARLIER IN THIS DEBATE (summarised):', summary);
   }
-  return parts.join('\n');
+  return parts.filter(Boolean).join('\n');
 }
 
 module.exports = {

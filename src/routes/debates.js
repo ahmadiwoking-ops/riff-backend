@@ -136,6 +136,7 @@ async function debateRoutes(app) {
       if (!tr.ok) return reply.code(400).send({ error: tr.reason });
       text = tr.text;
       viaVoice = true;
+      var heard = tr.language || null;
     }
     if (!text) return reply.code(400).send({ error: 'Say something.' });
     if (text.length > 4000) return reply.code(400).send({ error: 'That is too long for one turn.' });
@@ -159,6 +160,17 @@ async function debateRoutes(app) {
     await prisma.debateMessage.create({
       data: { debateId: debate.id, role: 'user', content: text, viaVoice: viaVoice },
     });
+
+    if (!debate.language) {
+      // Whisper first (free, every language), then script ranges (free,
+      // instant), then one model call for Latin scripts it cannot tell apart.
+      var lang = (typeof heard !== 'undefined' && heard) ? heard : debateSvc.detectLanguage(text);
+      if (!lang) lang = await debateSvc.detectLanguageByModel(text);
+      if (lang) {
+        await prisma.debate.update({ where: { id: debate.id }, data: { language: lang } });
+        debate.language = lang;
+      }
+    }
 
     const all = await prisma.debateMessage.findMany({
       where: { debateId: debate.id, role: { in: ['user', 'ai'] } },
