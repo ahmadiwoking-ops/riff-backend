@@ -134,7 +134,7 @@ const THINKING_OFF = { type: 'disabled' };
 
 const WINDOW = 12;          // exchanges sent verbatim
 const SUMMARISE_EVERY = 8;  // rewrite the summary this often
-const MAX_EXCHANGES = 40;   // hard cap, per the product decision
+const MAX_EXCHANGES = 15;   // hard cap, per the product decision
 
 let kimi = null;
 function client() {

@@ -114,7 +114,7 @@ async function debateRoutes(app) {
     });
     if (!debate) return reply.code(404).send({ error: 'Debate not found.' });
     if (debate.userId !== request.user.id) return reply.code(403).send({ error: 'Not yours.' });
-    return { debate, debater: getDebater(debate.persona) };
+    return { debate, debater: getDebater(debate.persona), maxExchanges: debateSvc.MAX_EXCHANGES };
   });
 
   // ── Take a turn ───────────────────────────────────────────────────────
