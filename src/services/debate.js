@@ -15,6 +15,15 @@ const { getDebater, buildDebatePrompt, ARBITER_PROMPT } = require('./debate-pers
 
 const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 
+
+/** kimi-k2.6 often returns an empty content field with the real output in
+ *  reasoning_content. Read whichever actually has something. */
+function readReply(res) {
+  var m = (res && res.choices && res.choices[0] && res.choices[0].message) || {};
+  var t = (m.content || "").trim();
+  if (!t && m.reasoning_content) t = m.reasoning_content.trim();
+  return t;
+}
 const WINDOW = 12;          // exchanges sent verbatim
 const SUMMARISE_EVERY = 8;  // rewrite the summary this often
 const MAX_EXCHANGES = 40;   // hard cap, per the product decision
@@ -91,7 +100,7 @@ async function updateSummary(debate, allMessages) {
         },
       ],
     });
-    return res.choices[0].message.content.trim();
+    return readReply(res);
   } catch (err) {
     // A failed summary is not worth failing the turn for - the window alone
     // still gives a usable debate.
@@ -129,7 +138,7 @@ async function debateReply(debate, allMessages) {
       messages: msgs,
     });
     console.log('[debate] raw choice: ' + JSON.stringify(res.choices[0]).slice(-1200));
-    const text = res.choices[0].message.content.trim();
+    const text = readReply(res);
     if (!text) return { ok: false, reason: 'No reply came back.' };
     return { ok: true, text: text };
   } catch (err) {
@@ -178,9 +187,13 @@ async function judgeDebate(debate, allMessages) {
       ],
     });
 
-    let raw = res.choices[0].message.content.trim();
+    let raw = readReply(res);
     // Models add fences despite being told not to.
     raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
+    // Take the JSON itself, ignoring any deliberation around it.
+    var _o = raw.indexOf('{') !== -1 ? raw.indexOf('{') : raw.indexOf('[');
+    var _c = raw.lastIndexOf('}') !== -1 ? raw.lastIndexOf('}') : raw.lastIndexOf(']');
+    if (_o !== -1 && _c > _o) raw = raw.slice(_o, _c + 1);
 
     let verdict;
     try {
@@ -222,8 +235,12 @@ async function suggestTopics(personaKey) {
         { role: 'user', content: 'Five topics.' },
       ],
     });
-    let raw = res.choices[0].message.content.trim();
+    let raw = readReply(res);
     raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
+    // Take the JSON itself, ignoring any deliberation around it.
+    var _o = raw.indexOf('{') !== -1 ? raw.indexOf('{') : raw.indexOf('[');
+    var _c = raw.lastIndexOf('}') !== -1 ? raw.lastIndexOf('}') : raw.lastIndexOf(']');
+    if (_o !== -1 && _c > _o) raw = raw.slice(_o, _c + 1);
     const list = JSON.parse(raw);
     if (!Array.isArray(list)) return { ok: false, reason: 'Bad suggestion format.' };
     return { ok: true, topics: list.slice(0, 5) };
