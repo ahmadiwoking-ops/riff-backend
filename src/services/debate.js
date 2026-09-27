@@ -74,6 +74,30 @@ function looksLikeDeliberation(t) {
 }
 /** Rough script detection, enough to tell the debater which language to
  *  use. Returns null when unsure - a wrong guess is worse than none. */
+/** For Latin-script text, where character ranges are no help. One short
+ *  call, made once per debate. Returns null rather than guessing. */
+async function detectLanguageByModel(text) {
+  var c = client();
+  if (!c) return null;
+  try {
+    var res = await c.chat.completions.create({
+      model: KIMI_MODEL,
+      max_tokens: 200,
+      temperature: 0.6,
+      thinking: THINKING_OFF,
+      messages: [
+        { role: "system", content: "Reply with only the English name of the language the text is written in. One word where possible. No punctuation, no explanation." },
+        { role: "user", content: String(text).slice(0, 400) },
+      ],
+    });
+    var name = (readReply(res) || "").trim().replace(/[^A-Za-z ]/g, "").trim();
+    if (!name || name.length > 25) return null;
+    if (/^english$/i.test(name)) return null;   // no instruction needed
+    return name;
+  } catch (e) {
+    return null;
+  }
+}
 function detectLanguage(text) {
   if (!text) return null;
   var t = String(text);
@@ -138,10 +162,10 @@ async function transcribe(base64Audio) {
   try {
     const buf = Buffer.from(base64Audio, 'base64');
     const file = new File([buf], 'speech.m4a', { type: 'audio/m4a' });
-    const res = await oa.audio.transcriptions.create({ file: file, model: 'whisper-1' });
+    const res = await oa.audio.transcriptions.create({ file: file, model: 'whisper-1', response_format: 'verbose_json' });
     const text = (res && res.text) ? res.text.trim() : '';
     if (!text) return { ok: false, reason: 'Nothing was heard in that recording.' };
-    return { ok: true, text: text };
+    return { ok: true, text: text, language: res.language || null };
   } catch (err) {
     return { ok: false, reason: (err && err.message) || 'Could not transcribe that.' };
   }
@@ -203,7 +227,8 @@ async function debateReply(debate, allMessages, _retry) {
   if (!debater) return { ok: false, reason: 'Unknown debater.' };
 
   const system = buildDebatePrompt(
-    debater, debate.topic, debate.userPosition, debate.aiPosition, debate.summary
+    debater, debate.topic, debate.userPosition, debate.aiPosition, debate.summary,
+    debate.language
   );
 
   // Only the recent window goes verbatim; the rest lives in the summary.
@@ -341,6 +366,7 @@ async function suggestTopics(personaKey) {
 
 module.exports = {
   detectLanguage,
+  detectLanguageByModel,
   transcribe,
   debateReply,
   judgeDebate,
