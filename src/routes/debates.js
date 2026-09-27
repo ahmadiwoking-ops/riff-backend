@@ -84,7 +84,9 @@ async function debateRoutes(app) {
         userPosition: userPosition,
         aiPosition: typeof body.aiPosition === 'string' && body.aiPosition.trim()
           ? body.aiPosition.trim()
-          : ('Against: ' + userPosition),
+          : (/^(for|agree|yes|true|支持)/i.test(userPosition)
+              ? ('Disagreeing with: ' + topic)
+              : ('Agreeing with: ' + topic)),
         topicSource: body.topicSource === 'suggested' ? 'suggested' : 'user',
       },
     });
