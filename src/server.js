@@ -18,7 +18,7 @@ async function start() {
     transports: ['websocket', 'polling'],
   });
 
-  const app = Fastify({ logger: true, trustProxy: true, serverFactory: (handler) => { httpServer.on('request', handler); return httpServer; } });
+  const app = Fastify({ bodyLimit: 25 * 1024 * 1024, logger: true, trustProxy: true, serverFactory: (handler) => { httpServer.on('request', handler); return httpServer; } });
 
   await app.register(cors, { origin: true, credentials: true });
   // The old fallback is in this repo history, so anyone could forge a token
