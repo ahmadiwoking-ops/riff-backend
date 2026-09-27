@@ -78,6 +78,11 @@ function readReply(res) {
   if (!t && m.reasoning_content) t = m.reasoning_content.trim();
   return t;
 }
+// If replies still arrive as deliberation, this is the first thing to check
+// against Moonshot's documentation - the mechanism is right, the spelling
+// may not be.
+const THINKING_OFF = { type: 'disabled' };
+
 const WINDOW = 12;          // exchanges sent verbatim
 const SUMMARISE_EVERY = 8;  // rewrite the summary this often
 const MAX_EXCHANGES = 40;   // hard cap, per the product decision
@@ -136,7 +141,7 @@ async function updateSummary(debate, allMessages) {
     const res = await c.chat.completions.create({
       model: KIMI_MODEL,
       max_tokens: 2000,
-      extra_body: { thinking: { type: 'disabled' } },
+      thinking: THINKING_OFF,
       messages: [
         {
           role: 'system',
@@ -188,9 +193,15 @@ async function debateReply(debate, allMessages, _retry) {
       model: KIMI_MODEL,
       max_tokens: 3000,
       temperature: 1,   // kimi-k2.6 rejects anything else
-      extra_body: { thinking: { type: 'disabled' } },
+      thinking: THINKING_OFF,
       messages: msgs,
     });
+    var fin = res.choices[0].finish_reason;
+    var thought = !!(res.choices[0].message && res.choices[0].message.reasoning_content);
+    console.log('[debate] finish=' + fin + ' reasoning=' + (thought ? 'yes' : 'no') + ' contentLen=' + ((res.choices[0].message.content || '').length));
+    if (fin === 'length') {
+      console.warn('[debate] hit the token ceiling before finishing');
+    }
     const text = readReply(res);
     if (!text) return { ok: false, reason: 'No reply came back.' };
     if (looksLikeDeliberation(text) && !_retry) {
@@ -241,7 +252,7 @@ async function judgeDebate(debate, allMessages) {
       model: KIMI_MODEL,
       max_tokens: 4000,
       temperature: 1,   // kimi-k2.6 rejects anything else
-      extra_body: { thinking: { type: 'disabled' } },
+      thinking: THINKING_OFF,
       messages: [
         { role: 'system', content: ARBITER_PROMPT },
         { role: 'user', content: body },
@@ -273,7 +284,7 @@ async function suggestTopics(personaKey) {
       model: KIMI_MODEL,
       max_tokens: 1500,
       temperature: 1,
-      extra_body: { thinking: { type: 'disabled' } },
+      thinking: THINKING_OFF,
       messages: [
         {
           role: 'system',
