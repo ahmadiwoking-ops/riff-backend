@@ -44,6 +44,7 @@ model User {
   pushToken       String?
   notificationPrefs Json?  // per-type opt-outs; null means every default is on
   debates           Debate[]
+  passwordResets    PasswordReset[]
   isActive        Boolean  @default(true)
   isBanned        Boolean  @default(false)
   banReason       String?
@@ -502,4 +503,15 @@ model DebateMessage {
   createdAt DateTime @default(now())
   debate    Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
   @@index([debateId, createdAt])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique  // the raw token is only ever in the email
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, usedAt])
 }

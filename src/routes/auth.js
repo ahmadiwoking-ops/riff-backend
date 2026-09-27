@@ -1,5 +1,7 @@
 const prisma = require('../db');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const { sendEmail, resetEmail } = require('../services/email');
 const { z } = require('zod');
 
 const registerSchema = z.object({
@@ -48,6 +50,68 @@ async function authRoutes(app) {
     } catch (err) { app.log.error(err); return reply.status(500).send({ error: 'Login failed' }); }
   });
 
+  // Always reports success, whether or not the address is registered -
+  // otherwise this becomes a way to discover who has an account.
+  app.post('/forgot-password', async (request) => {
+    var email = ((request.body || {}).email || '').trim().toLowerCase();
+    var ok = { status: 'sent' };
+    if (!email) return ok;
+
+    try {
+      var user = await prisma.user.findUnique({
+        where: { email: email },
+        select: { id: true, alias: true, email: true, isBanned: true },
+      });
+      if (!user || user.isBanned) return ok;
+
+      // Any outstanding token is spent, so only the newest link works.
+      await prisma.passwordReset.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+
+      var raw = crypto.randomBytes(32).toString('hex');
+      var hash = crypto.createHash('sha256').update(raw).digest('hex');
+      await prisma.passwordReset.create({
+        data: {
+          userId: user.id,
+          tokenHash: hash,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+      });
+
+      var base = process.env.PUBLIC_WEB_URL || 'https://riff-app.co.uk';
+      var mail = resetEmail(base + '/reset-password?token=' + raw, user.alias);
+      await sendEmail(user.email, mail.subject, mail.html, mail.text);
+    } catch (err) {
+      request.log.error(err, 'password reset request failed');
+    }
+    return ok;
+  });
+
+  app.post('/reset-password', async (request, reply) => {
+    var body = request.body || {};
+    var token = (body.token || '').trim();
+    var password = body.password || '';
+    if (!token) return reply.code(400).send({ error: 'That reset link is not valid.' });
+    if (password.length < 8) {
+      return reply.code(400).send({ error: 'Choose a password of at least 8 characters.' });
+    }
+
+    var hash = crypto.createHash('sha256').update(token).digest('hex');
+    var row = await prisma.passwordReset.findUnique({ where: { tokenHash: hash } });
+    if (!row || row.usedAt || row.expiresAt < new Date()) {
+      return reply.code(400).send({ error: 'That link has expired or has already been used. Ask for a new one.' });
+    }
+
+    var passwordHash = await bcrypt.hash(password, 12);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: row.userId }, data: { passwordHash: passwordHash } }),
+      prisma.passwordReset.update({ where: { id: row.id }, data: { usedAt: new Date() } }),
+    ]);
+
+    return { status: 'reset' };
+  });
   app.get('/me', { preHandler: [app.authenticate] }, async (request) => {
     return await prisma.user.findUnique({
       where: { id: request.user.id },
