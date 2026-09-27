@@ -18,6 +18,41 @@ const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 
 /** kimi-k2.6 often returns an empty content field with the real output in
  *  reasoning_content. Read whichever actually has something. */
+/** Arbiter returns labelled prose rather than JSON - this model reasons in
+ *  prose and never finishes a JSON object within any sane token budget.
+ *  A missing label degrades one field rather than failing the whole verdict. */
+function parseVerdict(text) {
+  function field(label) {
+    var m = text.match(new RegExp("^" + label + ":\\s*(.+?)(?=\\n[A-Z][A-Z ]{2,}:|$)", "ms"));
+    return m ? m[1].trim() : null;
+  }
+  function scores(label) {
+    var line = field(label);
+    if (!line) return null;
+    var out = {};
+    ["engagement", "concession", "progression", "evidence", "conduct"].forEach(function (k) {
+      var m = line.match(new RegExp(k + "\\D{0,4}(\\d{1,2})", "i"));
+      out[k] = m ? Math.min(10, parseInt(m[1], 10)) : null;
+    });
+    return out;
+  }
+  var winner = (field("WINNER") || "").toLowerCase();
+  if (winner.indexOf("user") !== -1) winner = "user";
+  else if (winner.indexOf("draw") !== -1) winner = "draw";
+  else if (winner.indexOf("ai") !== -1) winner = "ai";
+  else winner = null;
+  if (!winner) return null;
+  return {
+    winner: winner,
+    confidence: (field("CONFIDENCE") || "narrow").toLowerCase().indexOf("clear") !== -1 ? "clear" : "narrow",
+    summary: field("SUMMARY"),
+    scores: { user: scores("USER SCORES"), ai: scores("AI SCORES") },
+    userStrongest: field("USER STRONGEST"),
+    aiStrongest: field("AI STRONGEST"),
+    reasoning: field("REASONING"),
+    improve: field("IMPROVE"),
+  };
+}
 function readReply(res) {
   var m = (res && res.choices && res.choices[0] && res.choices[0].message) || {};
   var t = (m.content || "").trim();
@@ -188,18 +223,9 @@ async function judgeDebate(debate, allMessages) {
     });
 
     let raw = readReply(res);
-    // Models add fences despite being told not to.
-    raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
-    // Take the JSON itself, ignoring any deliberation around it.
-    var _o = raw.indexOf('{') !== -1 ? raw.indexOf('{') : raw.indexOf('[');
-    var _c = raw.lastIndexOf('}') !== -1 ? raw.lastIndexOf('}') : raw.lastIndexOf(']');
-    if (_o !== -1 && _c > _o) raw = raw.slice(_o, _c + 1);
-
-    let verdict;
-    try {
-      verdict = JSON.parse(raw);
-    } catch (e) {
-      console.error('[debate] verdict was not valid JSON:', raw.slice(0, 300));
+    var verdict = parseVerdict(raw);
+    if (!verdict) {
+      console.error('[debate] verdict unreadable, tail was:', raw.slice(-500));
       return { ok: false, reason: 'The judge could not be read. Try again.' };
     }
     if (!verdict || !verdict.winner) return { ok: false, reason: 'The judge returned nothing usable.' };

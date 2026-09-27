@@ -260,21 +260,20 @@ ASSESS EACH SIDE ON
 4. Evidence - were claims supported, and was uncertainty admitted where real?
 5. Conduct - did they argue about ideas rather than about the person?
 
-Return ONLY valid JSON, no markdown fence, in exactly this shape:
-{
-  "winner": "user" | "ai" | "draw",
-  "confidence": "clear" | "narrow",
-  "summary": "Two or three sentences on how the debate went overall.",
-  "scores": {
-    "user": { "engagement": 0-10, "concession": 0-10, "progression": 0-10, "evidence": 0-10, "conduct": 0-10 },
-    "ai":   { "engagement": 0-10, "concession": 0-10, "progression": 0-10, "evidence": 0-10, "conduct": 0-10 }
-  },
-  "userStrongest": "Their single best moment, quoted or closely paraphrased.",
-  "aiStrongest": "The same for the AI.",
-  "reasoning": "Three or four sentences naming the specific moments that decided it.",
-  "improve": "One concrete thing the user could do better next time."
-}
+VERDICT FORMAT
+Write your verdict in exactly this form, using these labels on their own lines:
 
+WINNER: user | ai | draw
+CONFIDENCE: clear | narrow
+SUMMARY: two or three sentences on how the debate went.
+USER SCORES: engagement X, concession X, progression X, evidence X, conduct X
+AI SCORES: engagement X, concession X, progression X, evidence X, conduct X
+USER STRONGEST: their single best moment.
+AI STRONGEST: the same for the AI.
+REASONING: three or four sentences naming the moments that decided it.
+IMPROVE: one concrete thing the user could do better next time.
+
+Scores are out of 10. Do not add any other text before or after.
 You will often find the user won. Say so when they did. A judge that always
 favours the AI is worthless and you know it.
 
