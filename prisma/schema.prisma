@@ -45,6 +45,7 @@ model User {
   notificationPrefs Json?  // per-type opt-outs; null means every default is on
   debates           Debate[]
   passwordResets    PasswordReset[]
+  emailVerifications EmailVerification[]
   isActive        Boolean  @default(true)
   isBanned        Boolean  @default(false)
   banReason       String?
@@ -509,6 +510,17 @@ model PasswordReset {
   id        String   @id @default(cuid())
   userId    String
   tokenHash String   @unique  // the raw token is only ever in the email
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, usedAt])
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique  // the raw token only ever exists in the email
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime @default(now())

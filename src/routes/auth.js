@@ -1,7 +1,7 @@
 const prisma = require('../db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const { sendEmail, resetEmail } = require('../services/email');
+const { sendEmail, resetEmail, verifyEmail } = require('../services/email');
 const { z } = require('zod');
 
 const registerSchema = z.object({
@@ -12,6 +12,28 @@ const registerSchema = z.object({
   connectionType: z.enum(['deep', 'circle', 'bot', 'all', 'both']),
 });
 
+// Fire-and-forget: a failed send must never fail a registration.
+async function sendVerification(app, user) {
+  try {
+    await prisma.emailVerification.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    var raw = crypto.randomBytes(32).toString('hex');
+    await prisma.emailVerification.create({
+      data: {
+        userId: user.id,
+        tokenHash: crypto.createHash('sha256').update(raw).digest('hex'),
+        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      },
+    });
+    var base = process.env.PUBLIC_API_URL || 'https://api.riff-app.co.uk';
+    var mail = verifyEmail(base + '/api/auth/verify-email?token=' + raw, user.alias);
+    await sendEmail(user.email, mail.subject, mail.html, mail.text);
+  } catch (err) {
+    app.log.error(err, 'could not send a verification email');
+  }
+}
 async function authRoutes(app) {
   app.post('/register', async (request, reply) => {
     try {
@@ -26,6 +48,8 @@ async function authRoutes(app) {
         data: { email: data.email, alias: data.alias, age: data.age, gender: data.gender, seekingGender: data.seekingGender, connectionType: data.connectionType, passwordHash, registrationIp: regIp, registrationLocation },
         select: { id: true, alias: true, email: true, plan: true, trustScore: true, idVerified: true },
       });
+      sendVerification(app, user);
+
       const token = app.jwt.sign({ id: user.id, alias: user.alias, role: 'user' });
       return reply.status(201).send({ user, token });
     } catch (err) {
@@ -111,6 +135,46 @@ async function authRoutes(app) {
     ]);
 
     return { status: 'reset' };
+  });
+  // Opened from an email client, by a person - so it answers with a page.
+  app.get('/verify-email', async (request, reply) => {
+    var token = (request.query || {}).token;
+    var ok = false;
+    if (token) {
+      var hash = crypto.createHash('sha256').update(String(token)).digest('hex');
+      var row = await prisma.emailVerification.findUnique({ where: { tokenHash: hash } });
+      if (row && !row.usedAt && row.expiresAt > new Date()) {
+        await prisma.$transaction([
+          prisma.user.update({ where: { id: row.userId }, data: { emailVerified: true } }),
+          prisma.emailVerification.update({ where: { id: row.id }, data: { usedAt: new Date() } }),
+        ]);
+        ok = true;
+      }
+    }
+    reply.type('text/html').send(
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Riff</title></head>' +
+      '<body style="margin:0;background:#0A0E18;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">' +
+      '<div style="max-width:440px;margin:80px auto;padding:32px;background:#151B2B;border-radius:16px;text-align:center;">' +
+      (ok
+        ? '<h1 style="font-size:20px;color:#F0ECE5;margin:0 0 12px;">Email confirmed</h1>' +
+          '<p style="font-size:14px;color:#94A3B8;line-height:1.7;margin:0;">Thank you. You can go back to the app now.</p>'
+        : '<h1 style="font-size:20px;color:#F0ECE5;margin:0 0 12px;">Link not recognised</h1>' +
+          '<p style="font-size:14px;color:#94A3B8;line-height:1.7;margin:0;">This link has expired or has already been used. Open Riff and ask for a new one.</p>') +
+      '</div></body></html>'
+    );
+  });
+
+  app.post('/resend-verification', { preHandler: [app.authenticate] }, async (request) => {
+    var user = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { id: true, email: true, alias: true, emailVerified: true },
+    });
+    if (!user) return { status: 'sent' };
+    if (user.emailVerified) return { status: 'already' };
+    await sendVerification(app, user);
+    return { status: 'sent' };
   });
   app.get('/me', { preHandler: [app.authenticate] }, async (request) => {
     return await prisma.user.findUnique({

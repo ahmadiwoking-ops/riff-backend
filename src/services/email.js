@@ -125,4 +125,34 @@ function resetEmail(link, alias) {
 
   return { subject: 'Reset your Riff password', html: html, text: text };
 }
+
+/** Sent at registration. Kept short - the only thing that matters is the
+ *  button, and a long email buries it. */
+function verifyEmail(link, alias) {
+  var hi = alias ? ('Hello ' + alias + ',') : 'Hello,';
+  var html = [
+    '<div style="background:#0A0E18;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">',
+    '  <div style="max-width:480px;margin:0 auto;background:#151B2B;border-radius:16px;padding:30px;">',
+    '    <h1 style="margin:0 0 14px;font-size:20px;font-weight:700;color:#F0ECE5;">Confirm your email</h1>',
+    '    <p style="margin:0 0 14px;font-size:15px;line-height:1.7;color:#CBD5E1;">' + hi + '</p>',
+    '    <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#CBD5E1;">Welcome to Riff. Confirm this address so we can match you with people, and so you can get back in if you ever forget your password.</p>',
+    '    <a href="' + link + '" style="display:inline-block;background:#8B5CF6;color:#ffffff;text-decoration:none;padding:13px 24px;border-radius:12px;font-size:15px;font-weight:700;">Confirm my email</a>',
+    '    <p style="margin:22px 0 0;font-size:13px;line-height:1.7;color:#8B8B96;">The link expires in 48 hours. If you did not sign up for Riff, you can ignore this.</p>',
+    '  </div>',
+    '  <p style="max-width:480px;margin:18px auto 0;font-size:12px;color:#64748B;text-align:center;">Riff Apps Limited</p>',
+    '</div>',
+  ].join('\n');
+
+  var text = [
+    'Confirm your email', '',
+    hi, '',
+    'Welcome to Riff. Confirm this address so we can match you with people,',
+    'and so you can get back in if you ever forget your password.', '',
+    link, '',
+    'The link expires in 48 hours. If you did not sign up for Riff, ignore this.', '',
+    'Riff Apps Limited',
+  ].join('\n');
+
+  return { subject: 'Confirm your Riff email', html: html, text: text };
+}
 module.exports = { sendEmail, launchEmail, FROM };

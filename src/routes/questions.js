@@ -94,6 +94,19 @@ async function questionRoutes(app) {
   });
 
   app.get('/matches', { preHandler: [app.authenticate] }, async (request) => {
+    var me = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { emailVerified: true, email: true },
+    });
+    if (me && !me.emailVerified) {
+      return {
+        matches: [],
+        blocked: 'email_unverified',
+        email: me.email,
+        message: 'Confirm your email address to see your matches. We sent a link to ' + me.email + '.',
+      };
+    }
+
     var userPlan = await prisma.user.findUnique({ where: { id: request.user.id }, select: { plan: true, planExpiresAt: true, matchVector: true, connectionType: true } });
     var plan = (userPlan && userPlan.plan) || 'free';
     if (userPlan && userPlan.planExpiresAt && userPlan.planExpiresAt < new Date()) plan = 'free';
