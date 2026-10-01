@@ -1,4 +1,6 @@
 const prisma = require('../db');
+const crypto = require('crypto');
+const { sendEmail, resetEmail } = require('../services/email');
 
 let Anthropic;
 try { Anthropic = require('@anthropic-ai/sdk'); } catch {}
@@ -72,6 +74,38 @@ async function adminRoutes(app) {
   });
 
   // ═══ User Management ═══
+  app.post('/users/:id/send-reset', { preHandler: [app.authenticate, requireAdmin] }, async (request, reply) => {
+    var user = await prisma.user.findUnique({
+      where: { id: request.params.id },
+      select: { id: true, email: true, alias: true },
+    });
+    if (!user) return reply.code(404).send({ error: 'No such user.' });
+
+    await prisma.passwordReset.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    var raw = crypto.randomBytes(32).toString('hex');
+    await prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        tokenHash: crypto.createHash('sha256').update(raw).digest('hex'),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+
+    var base = process.env.PUBLIC_WEB_URL || 'https://riff-app.co.uk';
+    var mail = resetEmail(base + '/reset-password?token=' + raw, user.alias);
+    var res = await sendEmail(user.email, mail.subject, mail.html, mail.text);
+
+    request.log.warn({ adminId: request.user.id, targetUserId: user.id }, 'admin triggered a password reset');
+    if (!res.sent) {
+      return reply.code(503).send({ error: 'Could not send: ' + (res.reason || 'unknown') });
+    }
+    return { status: 'sent', email: user.email };
+  });
+
   app.post('/users/:id/ban', { preHandler: [app.authenticate, requireAdmin] }, async (request) => {
     const { reason } = request.body || {};
     await prisma.user.update({ where: { id: request.params.id }, data: { isBanned: true, banReason: reason || 'Banned by admin' } });
