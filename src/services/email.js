@@ -155,4 +155,4 @@ function verifyEmail(link, alias) {
 
   return { subject: 'Confirm your Riff email', html: html, text: text };
 }
-module.exports = { sendEmail, launchEmail, FROM };
+module.exports = { sendEmail, launchEmail, resetEmail, verifyEmail, FROM };
