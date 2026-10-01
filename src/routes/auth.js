@@ -38,6 +38,7 @@ async function authRoutes(app) {
   app.post('/register', async (request, reply) => {
     try {
       const data = registerSchema.parse(request.body);
+      data.email = data.email.trim().toLowerCase();
       const existing = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { alias: data.alias }] } });
       if (existing) return reply.status(409).send({ error: existing.email === data.email ? 'Email already registered' : 'Alias taken' });
       const passwordHash = await bcrypt.hash(data.password, 12);
@@ -61,7 +62,8 @@ async function authRoutes(app) {
 
   app.post('/login', async (request, reply) => {
     try {
-      const { email, password } = request.body;
+      const password = (request.body || {}).password;
+      const email = ((request.body || {}).email || '').trim().toLowerCase();
       if (!email || !password) return reply.status(400).send({ error: 'Email and password required' });
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) return reply.status(401).send({ error: 'Invalid email or password' });
