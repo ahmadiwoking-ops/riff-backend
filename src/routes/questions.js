@@ -113,7 +113,7 @@ async function questionRoutes(app) {
     var planLimit = getLimits(plan).deepConnections;
     if (planLimit === 0) return { matches: [], plan: plan, message: 'Upgrade to see matches' };
     var user = userPlan;
-    if (!user || !user.matchVector || !user.matchVector.answers) return { matches: [] };
+    if (!user || !user.matchVector || !user.matchVector.answers) return { matches: [], needsQuestions: true };
 
     // Everyone this user already has a connection record with, active or ended.
     // Excluded from NEW matches only: actives come from /api/connections and
