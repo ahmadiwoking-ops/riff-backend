@@ -179,18 +179,18 @@ async function botConnectionRoutes(app) {
     };
   });
 
-  // ═══ Demo chat (free users, 10 messages tracked server-side) ═══
+  // ═══ Demo chat (free users, 50 messages a month, tracked server-side) ═══
   app.post('/demo', { preHandler: [app.authenticate] }, async (request, reply) => {
     const DEMO_LIMIT = 50;
     const { message, conversationHistory, persona, mode } = request.body;
     if (!message) return reply.code(400).send({ error: 'Message required' });
-    // Free plan can only chat with the 5 free personas; the other 15 require a subscription.
+    // Free plan can only chat with the 5 free personas; the rest require a subscription.
     if (persona && VERIFIED_ONLY_PERSONAS.includes(persona)) {
       return reply.code(403).send({ error: persona + ' is only available to ID-verified adults on a paid plan.', code: 'VERIFICATION_REQUIRED', persona: persona });
     }
     if (persona && !FREE_PERSONAS.includes(persona)) {
       return reply.code(403).send({ locked: true, upgrade: true, code: 'PERSONA_LOCKED',
-        message: persona + ' is available on paid plans. Subscribe to chat with all 20 companions.' });
+        message: persona + ' is available on paid plans. Subscribe to chat with all 25 companions.' });
     }
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
