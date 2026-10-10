@@ -52,7 +52,7 @@ async function subscriptionRoutes(app) {
     if (!process.env.STRIPE_SECRET_KEY) {
       await prisma.user.update({
         where: { id: request.user.id },
-        data: { plan, planExpiresAt: new Date(Date.now() + (billing === 'yearly' ? 365 : 30) * 86400000), idVerified: true, selfieVerified: true, phoneVerified: true, trustScore: 'green' },
+        data: { plan, planExpiresAt: new Date(Date.now() + (billing === 'yearly' ? 365 : 30) * 86400000) },
       });
       return { status: 'upgraded', plan, demo: true };
     }
@@ -230,7 +230,7 @@ setTimeout(goBack, 2000);
       if (userId && plan) {
         await prisma.user.update({
           where: { id: userId },
-          data: { plan, planExpiresAt: new Date(Date.now() + 30 * 86400000), idVerified: true, selfieVerified: true, phoneVerified: true, trustScore: 'green' },
+          data: { plan, planExpiresAt: new Date(Date.now() + 30 * 86400000) },
         });
       }
     }
