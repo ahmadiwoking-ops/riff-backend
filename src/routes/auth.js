@@ -219,6 +219,7 @@ async function authRoutes(app) {
         prisma.genieUsage.deleteMany({ where: { userId: userId } }),
         prisma.personaMemory.deleteMany({ where: { userId: userId } }),
         prisma.circleVote.deleteMany({ where: { OR: [{ targetUserId: userId }, { voterUserId: userId }] } }),
+        prisma.debate.deleteMany({ where: { userId: userId } }), // DebateMessage cascades
         prisma.user.delete({ where: { id: userId } }),
       ]);
       request.log.warn({ userId: userId }, 'User self-deleted account');
