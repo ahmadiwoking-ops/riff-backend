@@ -67,20 +67,6 @@ async function connectionRoutes(app) {
     return result.error ? { error: result.error, progress: result.progress } : result;
   });
 
-  app.post('/test-match', { preHandler: [app.authenticate] }, async (request, reply) => {
-    try {
-      const userId = request.user.id;
-      let testUser = await prisma.user.findUnique({ where: { email: 'luna-bot@riff.app' } });
-      if (!testUser) {
-        testUser = await prisma.user.create({ data: { email: 'luna-bot@riff.app', alias: 'MysteryMatch', age: 27, gender: 'Female', seekingGender: 'No preference', connectionType: 'both', passwordHash: await bcrypt.hash('testpassword123', 12), trustScore: 'green', idVerified: true, selfieVerified: true, phoneVerified: true } });
-      }
-      const existing = await prisma.connection.findFirst({ where: { OR: [{ userAId: userId, userBId: testUser.id }, { userAId: testUser.id, userBId: userId }], isActive: true } });
-      if (existing) return { connection: existing, message: 'Match exists' };
-      const connection = await prisma.connection.create({ data: { userAId: userId, userBId: testUser.id, compatScore: 78 + Math.random() * 15, stage: 'questioning', isPractice: false } });
-      return { connection, message: 'Test match created' };
-    } catch (err) { app.log.error(err); return reply.status(500).send({ error: 'Failed: ' + err.message }); }
-  });
-
   // Post-reveal decision (continue or fade)
   app.post('/:id/decision', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { decision } = request.body;
