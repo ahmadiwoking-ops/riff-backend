@@ -1,15 +1,6 @@
 const prisma = require('../db');
 
 async function subscriptionRoutes(app) {
-  app.get('/plans', async () => ({
-    plans: {
-      free: { name: 'Free', priceMonthly: 0, priceYearly: 0, currency: 'gbp', deepConnections: 1, circles: 1, verification: 'basic', badge: 'yellow' },
-      explorer: { name: 'Explorer', priceMonthly: 599, priceYearly: 3799, currency: 'gbp', deepConnections: 2, circles: 3, verification: 'full', badge: 'green' },
-      inner_circle: { name: 'Inner Circle', priceMonthly: 1199, priceYearly: 7499, currency: 'gbp', deepConnections: -1, circles: -1, verification: 'full', badge: 'green' },
-      bot_connection: { name: 'AI Companions', priceMonthly: 799, priceYearly: 7188, currency: 'gbp', deepConnections: 0, circles: 0, verification: 'none', badge: 'yellow', botMessages: 500 },
-    },
-  }));
-
   app.get('/current', { preHandler: [app.authenticate] }, async (request) => {
     return { subscription: await prisma.user.findUnique({ where: { id: request.user.id }, select: { plan: true, planExpiresAt: true } }) };
   });
