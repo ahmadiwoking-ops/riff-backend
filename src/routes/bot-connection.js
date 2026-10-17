@@ -48,59 +48,6 @@ async function botConnectionRoutes(app) {
   });
 
   // ═══ Subscribe to Bot Connection (demo mode for now) ═══
-  app.post('/subscribe', { preHandler: [app.authenticate] }, async (request) => {
-    const { billing } = request.body || {};
-
-    if (!process.env.STRIPE_SECRET_KEY) {
-      // Demo mode: instant activation
-      await prisma.user.update({
-        where: { id: request.user.id },
-        data: {
-          botConnectionPlan: 'bot_connection',
-          botConnectionExpiresAt: new Date(Date.now() + (billing === 'yearly' ? 365 : 30) * 86400000),
-        },
-      });
-      return { status: 'activated', plan: 'bot_connection', demo: true };
-    }
-
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-
-    let customerId = user.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({ email: user.email, metadata: { userId: user.id } });
-      customerId = customer.id;
-      await prisma.user.update({ where: { id: user.id }, data: { stripeCustomerId: customerId } });
-    }
-
-    const priceId = billing === 'yearly'
-      ? process.env.STRIPE_BOT_CONNECTION_YEARLY_PRICE_ID
-      : process.env.STRIPE_BOT_CONNECTION_MONTHLY_PRICE_ID;
-
-    if (!priceId) {
-      // Fallback to demo mode if price IDs not configured
-      await prisma.user.update({
-        where: { id: request.user.id },
-        data: {
-          botConnectionPlan: 'bot_connection',
-          botConnectionExpiresAt: new Date(Date.now() + (billing === 'yearly' ? 365 : 30) * 86400000),
-        },
-      });
-      return { status: 'activated', plan: 'bot_connection', demo: true };
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: 'https://riff-app.co.uk/get-started?bot_connection=success',
-      cancel_url: 'https://riff-app.co.uk/get-started?bot_connection=cancel',
-      metadata: { userId: user.id, type: 'bot_connection', billing },
-    });
-
-    return { checkoutUrl: session.url, sessionId: session.id };
-  });
-
   // ═══ Chat (text + optional audio) ═══
   app.post('/chat', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { message, conversationHistory, persona, mode, withAudio, gameContext } = request.body;
