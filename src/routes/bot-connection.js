@@ -6,6 +6,22 @@ const FREE_PERSONAS = ['Luna', 'Zara', 'Naia', 'Oscar', 'Maya']; // 5 personas a
 // age check — these require completed ID verification (idVerified), not just a plan.
 const VERIFIED_ONLY_PERSONAS = ['Yuki'];
 
+// Who gets the full companion experience (all 25, 500 a month). Single is deliberately
+// not here: Single and free users get the 5 free companions and 50 messages once.
+const FULL_ACCESS_PLANS = ['bot_connection', 'explorer', 'inner_circle'];
+const MONTHLY_ALLOWANCE = 500;
+function hasFullAccess(user) {
+  const now = new Date();
+  const legacy = user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > now);
+  const plan = FULL_ACCESS_PLANS.includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > now);
+  return legacy || plan;
+}
+// Takes credits only if there are enough - the balance can never go negative.
+async function spendCredits(userId, n) {
+  const r = await prisma.user.updateMany({ where: { id: userId, creditBalance: { gte: n } }, data: { creditBalance: { decrement: n } } });
+  return r.count === 1;
+}
+
 async function botConnectionRoutes(app) {
 
   // ═══ Usage check helper ═══
@@ -30,24 +46,21 @@ async function botConnectionRoutes(app) {
   app.get('/status', { preHandler: [app.authenticate] }, async (request) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
-      select: { plan: true, planExpiresAt: true, botConnectionPlan: true, botConnectionExpiresAt: true },
+      select: { plan: true, planExpiresAt: true, botConnectionPlan: true, botConnectionExpiresAt: true, creditBalance: true, freeChatUsed: true },
     });
-
-    const usage = await checkUsage(request.user.id);
-    const isPaidStatus = (user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date())) || (['bot_connection','explorer','inner_circle'].includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date()));
-    // Credits already spent on debates are no longer available for chat.
-    const limit = (isPaidStatus ? 500 : 50) + Math.max(0, (usage.bonusMessages || 0) - (usage.debateSpend || 0));
-    const remaining = Math.max(0, limit - usage.messageCount);
-
+    const full = hasFullAccess(user);
+    const credits = user.creditBalance || 0;
+    let used, allowance;
+    if (full) { const usage = await checkUsage(request.user.id); used = usage.messageCount; allowance = MONTHLY_ALLOWANCE; }
+    else { used = Math.min(50, user.freeChatUsed || 0); allowance = 50; }
     return {
-      plan: user.botConnectionPlan || user.plan || 'none',
+      plan: user.plan || 'free',
       expiresAt: user.botConnectionExpiresAt,
-      usage: { used: usage.messageCount, limit, remaining },
-      active: (user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date())) || (['bot_connection','explorer','inner_circle'].includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date())),
+      usage: { used, limit: allowance + credits, remaining: Math.max(0, allowance - used) + credits, credits, allowance, monthly: full },
+      active: full,
     };
   });
 
-  // ═══ Subscribe to Bot Connection (demo mode for now) ═══
   // ═══ Chat (text + optional audio) ═══
   app.post('/chat', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { message, conversationHistory, persona, mode, withAudio, gameContext } = request.body;
@@ -59,10 +72,7 @@ async function botConnectionRoutes(app) {
       where: { id: request.user.id },
       select: { plan: true, botConnectionPlan: true, botConnectionExpiresAt: true, planExpiresAt: true },
     });
-    const paidPlans = ['bot_connection', 'explorer', 'inner_circle', 'single'];
-    const hasBotPlan = user.botConnectionPlan === 'bot_connection' && (!user.botConnectionExpiresAt || user.botConnectionExpiresAt > new Date());
-    const hasAppPlan = paidPlans.includes(user.plan) && (!user.planExpiresAt || user.planExpiresAt > new Date());
-    if (!hasBotPlan && !hasAppPlan) {
+    if (!hasFullAccess(user)) {
       return reply.code(403).send({ error: 'AI Companions subscription required', code: 'NO_SUBSCRIPTION' });
     }
 
@@ -76,9 +86,10 @@ async function botConnectionRoutes(app) {
 
     // Check usage limit
     const usage = await checkUsage(request.user.id);
-    const effectiveLimit = 500 + Math.max(0, (usage.bonusMessages || 0) - (usage.debateSpend || 0));
-    if (usage.messageCount >= effectiveLimit) {
-      return reply.code(429).send({ error: 'Message limit reached (' + usage.messageCount + '/' + effectiveLimit + '). Buy more credits or wait for reset.', code: 'LIMIT_REACHED' });
+    const me = await prisma.user.findUnique({ where: { id: request.user.id }, select: { creditBalance: true } });
+    const fromAllowance = usage.messageCount < MONTHLY_ALLOWANCE;
+    if (!fromAllowance && (me.creditBalance || 0) < 1) {
+      return reply.code(429).send({ error: 'You have used your ' + MONTHLY_ALLOWANCE + ' messages this month. Buy credits to keep chatting, or wait for your allowance to reset.', code: 'LIMIT_REACHED' });
     }
 
     // Get persona from DB or use requested one
@@ -111,22 +122,26 @@ async function botConnectionRoutes(app) {
       audio = await generateAudioResponse(response.text, personaRecord?.alias || 'Luna');
     }
 
-    // Increment usage
-    await prisma.botConnectionUsage.update({
-      where: { id: usage.id },
-      data: { messageCount: { increment: 1 } },
-    });
+    // Use the monthly allowance first, then one credit
+    if (fromAllowance) {
+      await prisma.botConnectionUsage.update({ where: { id: usage.id }, data: { messageCount: { increment: 1 } } });
+    } else {
+      await spendCredits(request.user.id, 1);
+    }
+    const after = await prisma.user.findUnique({ where: { id: request.user.id }, select: { creditBalance: true } });
+    const usedNow = fromAllowance ? usage.messageCount + 1 : usage.messageCount;
+    const creditsNow = after.creditBalance || 0;
 
     return {
       response: response.text,
       source: response.source,
       persona: personaRecord?.alias || 'Luna',
       audio: audio || null,
-      usage: { used: usage.messageCount + 1, limit: effectiveLimit, remaining: Math.max(0, effectiveLimit - usage.messageCount - 1) },
+      usage: { used: usedNow, limit: MONTHLY_ALLOWANCE + creditsNow, remaining: Math.max(0, MONTHLY_ALLOWANCE - usedNow) + creditsNow, credits: creditsNow, allowance: MONTHLY_ALLOWANCE, monthly: true },
     };
   });
 
-  // ═══ Demo chat (free users, 50 messages a month, tracked server-side) ═══
+  // ═══ Free chat (free and Single users): 5 companions, 50 messages once ever, then credits ═══
   app.post('/demo', { preHandler: [app.authenticate] }, async (request, reply) => {
     const DEMO_LIMIT = 50;
     const { message, conversationHistory, persona, mode } = request.body;
@@ -139,18 +154,23 @@ async function botConnectionRoutes(app) {
       return reply.code(403).send({ locked: true, upgrade: true, code: 'PERSONA_LOCKED',
         message: persona + ' is available on paid plans. Subscribe to chat with all 25 companions.' });
     }
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    let usage = await prisma.botConnectionUsage.findFirst({ where: { userId: request.user.id, monthStart: monthStart } });
-    if (!usage) { usage = await prisma.botConnectionUsage.create({ data: { userId: request.user.id, monthStart: monthStart, messageCount: 0, bonusMessages: 0 } }); }
-    var demoEffective = DEMO_LIMIT + (usage.bonusMessages || 0);
-    if (usage.messageCount >= demoEffective) { return reply.code(429).send({ error: 'You have used all your free messages this month. Subscribe or buy more to continue.', remaining: 0, limit: demoEffective, used: usage.messageCount, code: 'LIMIT_REACHED' }); }
+    const me = await prisma.user.findUnique({ where: { id: request.user.id }, select: { freeChatUsed: true, creditBalance: true } });
+    const fromFree = (me.freeChatUsed || 0) < DEMO_LIMIT;
+    if (!fromFree && (me.creditBalance || 0) < 1) {
+      return reply.code(429).send({ error: 'You have used your ' + DEMO_LIMIT + ' free messages. Buy credits or subscribe to keep chatting.', remaining: 0, limit: DEMO_LIMIT, used: me.freeChatUsed, code: 'LIMIT_REACHED' });
+    }
     const personaRecord = persona ? await prisma.botPersona.findFirst({ where: { alias: persona } }) : await prisma.botPersona.findFirst({ where: { alias: 'Luna' } });
     const response = await generateKimiResponse(personaRecord || { alias: persona || 'Luna' }, message, conversationHistory || [], (mode || 'chat'), null);
     let audio = null;
     // Audio now generated on-demand via /tts when the user taps play (saves cost + latency)
-    await prisma.botConnectionUsage.update({ where: { id: usage.id }, data: { messageCount: usage.messageCount + 1 } });
-    return { response: response.text, source: response.source, persona: personaRecord?.alias || 'Luna', audio: audio || null, isDemo: true, usage: { used: usage.messageCount + 1, limit: demoEffective, remaining: Math.max(0, demoEffective - usage.messageCount - 1) } };
+    if (fromFree) {
+      await prisma.user.update({ where: { id: request.user.id }, data: { freeChatUsed: { increment: 1 } } });
+    } else {
+      await spendCredits(request.user.id, 1);
+    }
+    const after = await prisma.user.findUnique({ where: { id: request.user.id }, select: { freeChatUsed: true, creditBalance: true } });
+    const freeUsed = Math.min(DEMO_LIMIT, after.freeChatUsed || 0), creditsNow = after.creditBalance || 0;
+    return { response: response.text, source: response.source, persona: personaRecord?.alias || 'Luna', audio: audio || null, isDemo: true, usage: { used: freeUsed, limit: DEMO_LIMIT + creditsNow, remaining: Math.max(0, DEMO_LIMIT - freeUsed) + creditsNow, credits: creditsNow, allowance: DEMO_LIMIT, monthly: false } };
   });
 
   // ═══ Get available personas ═══
@@ -264,13 +284,8 @@ async function botConnectionRoutes(app) {
     };
     var selected = PACKS[pack];
     if (!selected) return reply.code(400).send({ error: 'Invalid pack' });
-    var now = new Date();
-    var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     if (!process.env.STRIPE_SECRET_KEY) {
-      var usage = await prisma.botConnectionUsage.findFirst({ where: { userId: request.user.id, monthStart: monthStart } });
-      if (!usage) usage = await prisma.botConnectionUsage.create({ data: { userId: request.user.id, monthStart: monthStart, messageCount: 0, bonusMessages: 0 } });
-      await prisma.botConnectionUsage.update({ where: { id: usage.id }, data: { bonusMessages: { increment: selected.messages } } });
-      return { status: 'added', messages: selected.messages, demo: true };
+      return reply.code(503).send({ error: 'Purchases are temporarily unavailable.' });
     }
     var priceId = process.env[selected.priceKey];
     if (!priceId) return reply.code(400).send({ error: 'Price not configured for ' + pack });

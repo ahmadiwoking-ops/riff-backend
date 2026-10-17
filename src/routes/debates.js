@@ -9,18 +9,6 @@ const debateSvc = require('../services/debate');
 const CREDITS_PER_MESSAGE = 2;
 const FREE_DEBATE_MESSAGES = 50;
 
-async function monthUsage(userId) {
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  let usage = await prisma.botConnectionUsage.findFirst({ where: { userId, monthStart } });
-  if (!usage) {
-    usage = await prisma.botConnectionUsage.create({
-      data: { userId, monthStart, messageCount: 0, bonusMessages: 0 },
-    });
-  }
-  return usage;
-}
-
 /** How many debate messages this person has sent, ever. */
 async function debateMessagesUsed(userId) {
   return prisma.debateMessage.count({
@@ -38,8 +26,8 @@ async function debateRoutes(app) {
   app.get('/allowance', { preHandler: [app.authenticate] }, async (request) => {
     const used = await debateMessagesUsed(request.user.id);
     const freeLeft = Math.max(0, FREE_DEBATE_MESSAGES - used);
-    const usage = await monthUsage(request.user.id);
-    const credits = Math.max(0, usage.bonusMessages - (usage.debateSpend || 0));
+    const me = await prisma.user.findUnique({ where: { id: request.user.id }, select: { creditBalance: true } });
+    const credits = Math.max(0, me.creditBalance || 0);
     return {
       freeLeft,
       credits,
@@ -144,10 +132,9 @@ async function debateRoutes(app) {
     // Allowance: free messages first, then credits.
     const used = await debateMessagesUsed(request.user.id);
     const usingFree = used < FREE_DEBATE_MESSAGES;
-    let usage = null;
     if (!usingFree) {
-      usage = await monthUsage(request.user.id);
-      const credits = usage.bonusMessages - (usage.debateSpend || 0);
+      const me = await prisma.user.findUnique({ where: { id: request.user.id }, select: { creditBalance: true } });
+      const credits = me.creditBalance || 0;
       if (credits < CREDITS_PER_MESSAGE) {
         return reply.code(402).send({
           error: 'You are out of debate credits.',
@@ -198,11 +185,8 @@ async function debateRoutes(app) {
     }
     await prisma.debate.update({ where: { id: debate.id }, data: data });
 
-    if (!usingFree && usage) {
-      await prisma.botConnectionUsage.update({
-        where: { id: usage.id },
-        data: { debateSpend: { increment: CREDITS_PER_MESSAGE } },
-      });
+    if (!usingFree) {
+      await prisma.user.updateMany({ where: { id: request.user.id, creditBalance: { gte: CREDITS_PER_MESSAGE } }, data: { creditBalance: { decrement: CREDITS_PER_MESSAGE } } });
     }
 
     return {
