@@ -59,7 +59,6 @@ async function start() {
   app.register(require('./routes/subscriptions'), { prefix: '/api/subscriptions' });
   app.register(require('./routes/verification'), { prefix: '/api/verification' });
   app.register(require('./routes/bot-connection'), { prefix: '/api/bot-connection' });
-  app.register(require('./routes/genie'), { prefix: '/api/genie' });
   app.register(require('./routes/safety'), { prefix: '/api/safety' });
   app.register(require('./routes/parallel-lives'), { prefix: '/api/parallel-lives' });
 

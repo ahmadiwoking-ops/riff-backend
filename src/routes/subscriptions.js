@@ -200,20 +200,10 @@ setTimeout(goBack, 2000);
         await prisma.botConnectionUsage.update({ where: { id: u.id }, data: { bonusMessages: { increment: msgs } } });
         return { received: true };
       }
-      // Handle Genie credit purchases
+      // Handle verification fee purchases
       if (s.metadata && s.metadata.type === 'verification_fee') {
         var vUserId = s.metadata.userId || s.client_reference_id;
         if (vUserId) { try { await prisma.user.update({ where: { id: vUserId }, data: { verificationPaid: true } }); } catch (e) {} }
-        return { received: true };
-      }
-      if (s.metadata && s.metadata.type === 'genie_credits') {
-        const guid = s.metadata.userId;
-        const reqs = parseInt(s.metadata.requests) || 0;
-        const gnow = new Date();
-        const gStart = new Date(gnow.getFullYear(), gnow.getMonth(), 1);
-        let gu = await prisma.genieUsage.findFirst({ where: { userId: guid, monthStart: gStart } });
-        if (!gu) gu = await prisma.genieUsage.create({ data: { userId: guid, monthStart: gStart, requestCount: 0, bonusRequests: 0 } });
-        await prisma.genieUsage.update({ where: { id: gu.id }, data: { bonusRequests: { increment: reqs } } });
         return { received: true };
       }
       const session = event.data.object;
