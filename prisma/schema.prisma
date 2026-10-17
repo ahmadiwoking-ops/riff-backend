@@ -53,6 +53,8 @@ model User {
   registrationLocation String?
   botConnectionPlan       String?
   botConnectionExpiresAt  DateTime?
+  creditBalance   Int      @default(0)  // purchased message credits - never expire
+  freeChatUsed    Int      @default(0)  // lifetime count of the 50 free companion messages
   lastActiveAt    DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -526,4 +528,12 @@ model EmailVerification {
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, usedAt])
+}
+
+// One row per payment event already processed, so a repeated webhook cannot credit twice.
+model ProcessedPayment {
+  id        String   @id          // Stripe checkout session id, or RevenueCat event id
+  userId    String
+  kind      String               // e.g. message_credits
+  createdAt DateTime @default(now())
 }
