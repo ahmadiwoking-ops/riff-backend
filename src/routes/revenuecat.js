@@ -26,11 +26,17 @@ function creditsFor(productId) {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-function authorised(header) {
-  const expected = process.env.REVENUECAT_WEBHOOK_AUTH;
-  if (!expected || typeof header !== 'string') return false;
-  const a = Buffer.from(header), b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+// Tolerant of stray spaces, quotes and a missing or extra "Bearer " on either side.
+function clean(v) { return String(v || '').trim().replace(/^["']|["']$/g, '').trim().replace(/^Bearer\s+/i, '').trim(); }
+function fingerprint(v) { return crypto.createHash('sha256').update(v).digest('hex').slice(0, 6); }
+function authorised(header, log) {
+  const expected = clean(process.env.REVENUECAT_WEBHOOK_AUTH);
+  const got = clean(header);
+  const a = Buffer.from(got), b = Buffer.from(expected);
+  const ok = expected.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
+  // Safe hint on failure: lengths and a short hash only, never the secret itself.
+  if (!ok && log) log.warn({ gotLength: got.length, expectedLength: expected.length, got: fingerprint(got), expected: fingerprint(expected) }, 'RevenueCat auth mismatch');
+  return ok;
 }
 
 // The app logs in to RevenueCat with the Riff user id, so app_user_id is our User.id.
@@ -64,7 +70,7 @@ async function revenuecatRoutes(app) {
       request.log.error('REVENUECAT_WEBHOOK_AUTH is not set');
       return reply.code(503).send({ error: 'Not configured' });
     }
-    if (!authorised(request.headers.authorization)) return reply.code(401).send({ error: 'Unauthorised' });
+    if (!authorised(request.headers.authorization, request.log)) return reply.code(401).send({ error: 'Unauthorised' });
 
     const ev = request.body && request.body.event;
     if (!ev || !ev.type) return reply.code(400).send({ error: 'No event' });
