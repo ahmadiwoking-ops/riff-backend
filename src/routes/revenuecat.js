@@ -13,6 +13,54 @@ const PLAN_BY_PREFIX = [
 ];
 const VERIFICATION_PRODUCT = 'riff_verification';
 const PLAN_EVENTS = ['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'SUBSCRIPTION_EXTENDED', 'TEMPORARY_ENTITLEMENT_GRANT', 'REFUND_REVERSED'];
+const RANK = { single: 1, bot_connection: 2, explorer: 3, inner_circle: 4 };
+
+// Apply a plan unless the account already has a different plan that is higher, or runs
+// longer (e.g. a website or admin-granted plan). The same plan is never shortened.
+function shouldApply(user, plan, exp, now) {
+  const cur = user.plan;
+  const curActive = cur && cur !== 'free' && (!user.planExpiresAt || user.planExpiresAt.getTime() > now);
+  if (!curActive) return true;
+  if (cur === plan) return !!user.planExpiresAt && user.planExpiresAt.getTime() <= exp.getTime();
+  if ((RANK[plan] || 0) > (RANK[cur] || 0)) return true;
+  // A lower plan only takes over when the current one is ending (an App Store downgrade at renewal).
+  return !!user.planExpiresAt && user.planExpiresAt.getTime() <= now + 24 * 3600 * 1000;
+}
+
+// Reads a customer's current App Store subscriptions from RevenueCat (REST API v1).
+function fetchSubscriber(appUserId) {
+  const key = process.env.REVENUECAT_SECRET_KEY;
+  if (!key) return Promise.resolve(null);
+  return new Promise(function (resolve, reject) {
+    const req = require('https').request({
+      hostname: 'api.revenuecat.com', path: '/v1/subscribers/' + encodeURIComponent(appUserId), method: 'GET',
+      headers: { Authorization: 'Bearer ' + key.trim(), 'Content-Type': 'application/json', 'X-Platform': 'ios' },
+    }, function (res) {
+      let data = '';
+      res.on('data', function (c) { data += c; });
+      res.on('end', function () {
+        if (res.statusCode !== 200) return reject(new Error('RevenueCat API ' + res.statusCode));
+        try { resolve(JSON.parse(data).subscriber || null); } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(8000, function () { req.destroy(new Error('RevenueCat API timeout')); });
+    req.end();
+  });
+}
+function activePlanFrom(sub, now) {
+  let best = null;
+  const subs = (sub && sub.subscriptions) || {};
+  Object.keys(subs).forEach(function (pid) {
+    const plan = planFor(pid);
+    const s = subs[pid];
+    if (!plan || !s || !s.expires_date || s.refunded_at) return;
+    const exp = new Date(s.expires_date);
+    if (!(exp.getTime() > now)) return;
+    if (!best || RANK[plan] > RANK[best.plan] || (RANK[plan] === RANK[best.plan] && exp > best.exp)) best = { plan: plan, exp: exp };
+  });
+  return best;
+}
 
 // Google Play ids look like "base:plan" - compare on the base part only.
 function baseId(productId) { return String(productId || '').split(':')[0]; }
@@ -77,6 +125,44 @@ async function revenuecatRoutes(app) {
     const info = { type: ev.type, product: ev.product_id, env: ev.environment, eventId: ev.id };
     if (ev.type === 'TEST') { request.log.info(info, 'RevenueCat test event'); return { received: true }; }
 
+    // TRANSFER: RevenueCat moved an Apple ID's purchases to another Riff account (restore, or
+    // buying on a second account). The event has no product, so read the new owner's
+    // subscriptions from RevenueCat and apply them; the old account loses that same plan.
+    if (ev.type === 'TRANSFER') {
+      const realIds = function (a) { return (Array.isArray(a) ? a : []).map(String).filter(function (x) { return x && x.indexOf('$RCAnonymousID') !== 0; }); };
+      const toIds = realIds(ev.transferred_to), fromIds = realIds(ev.transferred_from);
+      const sel = { id: true, plan: true, planExpiresAt: true };
+      const dest = toIds.length ? await prisma.user.findFirst({ where: { id: { in: toIds } }, select: sel }) : null;
+      let tAction = 'none';
+      if (!dest) tAction = 'no Riff account among transferred_to';
+      else {
+        let sub;
+        try { sub = await fetchSubscriber(dest.id); }
+        catch (e) { request.log.error({ err: e.message, to: dest.id }, 'RevenueCat transfer: could not read subscriber'); return reply.code(500).send({ error: 'retry' }); }
+        if (sub === null) tAction = 'REVENUECAT_SECRET_KEY not set - transfer not applied';
+        else {
+          const now2 = Date.now();
+          const best = activePlanFrom(sub, now2);
+          if (!best) tAction = 'no active App Store plan to move';
+          else {
+            if (shouldApply(dest, best.plan, best.exp, now2)) {
+              await prisma.user.update({ where: { id: dest.id }, data: { plan: best.plan, planExpiresAt: best.exp } });
+              tAction = 'plan ' + best.plan + ' until ' + best.exp.toISOString() + ' on ' + dest.id;
+            } else tAction = 'kept existing plan ' + dest.plan + ' on ' + dest.id;
+            const froms = fromIds.length ? await prisma.user.findMany({ where: { id: { in: fromIds } }, select: sel }) : [];
+            for (const fu of froms) {
+              if (fu.id !== dest.id && fu.plan === best.plan && fu.planExpiresAt && Math.abs(fu.planExpiresAt.getTime() - best.exp.getTime()) < 24 * 3600 * 1000) {
+                await prisma.user.update({ where: { id: fu.id }, data: { plan: 'free', planExpiresAt: new Date(now2) } });
+                tAction += '; removed from ' + fu.id;
+              }
+            }
+          }
+        }
+      }
+      request.log.info(Object.assign({ action: tAction, from: fromIds, to: toIds }, info), 'RevenueCat transfer handled');
+      return { received: true };
+    }
+
     const user = await findUser(ev);
     if (!user) {
       // 200 so RevenueCat does not retry forever; the log shows what was missed.
@@ -97,7 +183,7 @@ async function revenuecatRoutes(app) {
       // Purchase, renewal (also how an upgrade or a downgrade arrives), re-enabled renewal, extension.
       if (plan && exp && exp.getTime() > now) {
         // Never shorten the same plan if RevenueCat retries an older event late.
-        if (user.plan === plan && user.planExpiresAt && user.planExpiresAt > exp) action = 'kept later end date';
+        if (!shouldApply(user, plan, exp, now)) action = 'kept existing plan ' + user.plan;
         else {
           await prisma.user.update({ where: { id: user.id }, data: { plan: plan, planExpiresAt: exp } });
           action = 'plan ' + plan + ' until ' + exp.toISOString();
