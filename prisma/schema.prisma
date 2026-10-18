@@ -43,6 +43,8 @@ model User {
   matchVector       Json?
   pushToken       String?
   notificationPrefs Json?  // per-type opt-outs; null means every default is on
+  marketingOptOut Boolean  @default(false)  // unsubscribed from news and offers emails
+  emailUnsubToken String?  @unique          // used in email unsubscribe links
   debates           Debate[]
   passwordResets    PasswordReset[]
   emailVerifications EmailVerification[]
@@ -536,4 +538,37 @@ model ProcessedPayment {
   userId    String
   kind      String               // e.g. message_credits
   createdAt DateTime @default(now())
+}
+
+// Admin emails: one row per send (bulk or individual). Recipients hold user ids
+// only - the address is looked up at send time, so nothing is kept after an
+// account is deleted.
+model EmailCampaign {
+  id           String   @id @default(cuid())
+  kind         String   // announcement | marketing | direct
+  audience     String
+  subject      String
+  body         String
+  sentBy       String
+  total        Int      @default(0)
+  sentCount    Int      @default(0)
+  failedCount  Int      @default(0)
+  skippedCount Int      @default(0)
+  pendingCount Int      @default(0)
+  status       String   @default("paused") // sending | paused | done
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  recipients   EmailRecipient[]
+}
+
+model EmailRecipient {
+  id         String        @id @default(cuid())
+  campaignId String
+  userId     String
+  status     String        @default("pending") // pending | sent | failed | skipped
+  error      String?
+  sentAt     DateTime?
+  campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  @@unique([campaignId, userId])
+  @@index([status, sentAt])
 }
