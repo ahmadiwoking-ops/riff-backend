@@ -10,6 +10,8 @@ const registerSchema = z.object({
   gender: z.enum(['Male', 'Female', 'Non-binary', 'No Preference', 'Prefer not to say']).optional().default('No Preference'),
   seekingGender: z.enum(['Male', 'Female', 'Non-binary', 'No Preference', 'No preference', 'A Friends Circle']).optional().default('No Preference'),
   connectionType: z.enum(['deep', 'circle', 'bot', 'all', 'both']),
+  acceptTerms: z.boolean().optional(),
+  sensitiveConsent: z.boolean().optional(),
 });
 
 // Fire-and-forget: a failed send must never fail a registration.
@@ -38,6 +40,9 @@ async function authRoutes(app) {
   app.post('/register', async (request, reply) => {
     try {
       const data = registerSchema.parse(request.body);
+      if (data.acceptTerms !== true || data.sensitiveConsent !== true) {
+        return reply.status(400).send({ error: 'Please tick both boxes to agree before creating your account. If you do not see them, update the Riff app.' });
+      }
       data.email = data.email.trim().toLowerCase();
       const existing = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { alias: data.alias }] } });
       if (existing) return reply.status(409).send({ error: existing.email === data.email ? 'Email already registered' : 'Alias taken' });
@@ -46,7 +51,7 @@ async function authRoutes(app) {
       let registrationLocation = null;
       try { const geo = await fetch("http://ip-api.com/json/" + regIp + "?fields=country,city"); const loc = await geo.json(); if (loc.country) registrationLocation = (loc.city ? loc.city + ", " : "") + loc.country; } catch {}
       const user = await prisma.user.create({
-        data: { email: data.email, alias: data.alias, age: data.age, gender: data.gender, seekingGender: data.seekingGender, connectionType: data.connectionType, passwordHash, registrationIp: regIp, registrationLocation },
+        data: { email: data.email, alias: data.alias, age: data.age, gender: data.gender, seekingGender: data.seekingGender, connectionType: data.connectionType, passwordHash, registrationIp: regIp, registrationLocation, termsAcceptedAt: new Date(), sensitiveConsentAt: new Date() },
         select: { id: true, alias: true, email: true, plan: true, trustScore: true, idVerified: true },
       });
       sendVerification(app, user);

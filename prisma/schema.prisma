@@ -44,6 +44,8 @@ model User {
   pushToken       String?
   notificationPrefs Json?  // per-type opt-outs; null means every default is on
   marketingOptOut Boolean  @default(false)  // unsubscribed from news and offers emails
+  termsAcceptedAt    DateTime?  // ticked "18+ and agree to Terms / Privacy Policy" at sign-up
+  sensitiveConsentAt DateTime?  // explicit consent: who they want to meet, selfie and ID checks
   emailUnsubToken String?  @unique          // used in email unsubscribe links
   debates           Debate[]
   passwordResets    PasswordReset[]
