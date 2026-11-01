@@ -574,3 +574,17 @@ model EmailRecipient {
   @@unique([campaignId, userId])
   @@index([status, sentAt])
 }
+
+// One row per sensitive admin action (currently: account deletion from the admin area).
+model AdminAuditLog {
+  id                String   @id @default(cuid())
+  adminId           String
+  adminAlias        String?
+  action            String   // delete_user
+  targetId          String
+  targetAlias       String?
+  targetEmailMasked String?
+  detail            String?
+  createdAt         DateTime @default(now())
+  @@index([createdAt])
+}

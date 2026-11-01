@@ -63,6 +63,7 @@ async function start() {
   app.register(require('./routes/parallel-lives'), { prefix: '/api/parallel-lives' });
   app.register(require('./routes/revenuecat'), { prefix: '/api/revenuecat' });
   app.register(require('./routes/admin-email'), { prefix: '/api/email' });
+  app.register(require('./routes/admin-delete'), { prefix: '/api/admin-delete' });
 
   io.on('connection', (socket) => {
     socket.on('join:connection', (id) => socket.join('connection:' + id));

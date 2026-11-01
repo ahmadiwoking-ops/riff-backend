@@ -117,54 +117,7 @@ async function adminRoutes(app) {
     return { status: 'unbanned', userId: request.params.id };
   });
 
-  app.post('/users/:id/delete', { preHandler: [app.authenticate, requireAdmin] }, async (request, reply) => {
-    const userId = request.params.id;
-    try {
-      // Get all connections involving this user
-      const connections = await prisma.connection.findMany({ where: { OR: [{ userAId: userId }, { userBId: userId }] }, select: { id: true } });
-      const connIds = connections.map(c => c.id);
-
-      // Delete in dependency order to avoid foreign key violations
-      await prisma.$transaction([
-        // Tables referencing VoiceMessage/Connection
-        prisma.voiceScore.deleteMany({ where: { OR: [{ scorerId: userId }, { scoredId: userId }] } }),
-        prisma.voiceMessage.deleteMany({ where: { senderId: userId } }),
-        // Messages (sender or receiver)
-        prisma.message.deleteMany({ where: { OR: [{ senderId: userId }, { receiverId: userId }] } }),
-        // Connection-owned records for connections being deleted
-        ...(connIds.length ? [
-          prisma.voiceScore.deleteMany({ where: { connectionId: { in: connIds } } }),
-          prisma.voiceMessage.deleteMany({ where: { connectionId: { in: connIds } } }),
-          prisma.message.deleteMany({ where: { connectionId: { in: connIds } } }),
-        ] : []),
-        // Connections
-        prisma.connection.deleteMany({ where: { OR: [{ userAId: userId }, { userBId: userId }] } }),
-        // Circle membership
-        prisma.circleMember.deleteMany({ where: { userId } }),
-        // User-owned records
-        prisma.photo.deleteMany({ where: { userId } }),
-        prisma.lifeChapter.deleteMany({ where: { userId } }),
-        prisma.safetyFlag.updateMany({ where: { userId }, data: { userId: null } }),
-        prisma.safetyFlag.updateMany({ where: { reporterId: userId }, data: { reporterId: null } }),
-        prisma.notification.deleteMany({ where: { userId } }),
-        prisma.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
-        prisma.questionAnswer.deleteMany({ where: { userId } }),
-        prisma.botConnectionUsage.deleteMany({ where: { userId } }),
-        prisma.circleRoundAnswer.deleteMany({ where: { userId } }),
-        prisma.gameResponse.deleteMany({ where: { userId } }),
-        prisma.genieMessage.deleteMany({ where: { userId } }),
-        prisma.genieUsage.deleteMany({ where: { userId } }),
-        prisma.personaMemory.deleteMany({ where: { userId } }),
-        prisma.circleVote.deleteMany({ where: { OR: [{ targetUserId: userId }, { voterUserId: userId }] } }),
-        // Finally delete the user
-        prisma.user.delete({ where: { id: userId } }),
-      ]);
-      return { status: 'deleted', userId };
-    } catch (err) {
-      console.error('[admin] Delete user error:', err.message);
-      return reply.code(500).send({ error: 'Delete failed: ' + err.message });
-    }
-  });
+  // Account deletion moved to /api/admin-delete (password + authenticator code, audit log).
 
   // ═══ Content Studio: proxy to Anthropic API ═══
   app.post('/generate-content', { preHandler: [app.authenticate, requireAdmin] }, async (request, reply) => {
