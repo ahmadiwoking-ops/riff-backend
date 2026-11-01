@@ -155,7 +155,7 @@ async function adminDeleteRoutes(app) {
 
     // Run the app's own deletion as the target user (token valid for one minute).
     const asTarget = app.jwt.sign({ id: t.id, alias: t.alias, role: 'user' }, { expiresIn: '1m' });
-    const res = await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { authorization: 'Bearer ' + asTarget } });
+    const res = await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { authorization: 'Bearer ' + asTarget }, payload: { confirm: 'DELETE' } });
     if (res.statusCode < 200 || res.statusCode >= 300) {
       let msg = 'Delete failed.';
       try { msg = JSON.parse(res.body).error || msg; } catch (e) {}
