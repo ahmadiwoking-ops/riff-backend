@@ -104,6 +104,18 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
 
+// Turn what people type into E.164 (+447700900000). Accepts spaces, dashes,
+// brackets, 07..., 0044..., 44... and +44 0.... null if it is not a number.
+function normalisePhone(raw) {
+  let p = String(raw || '').replace(/[\s().-]/g, '');
+  if (!p) return null;
+  if (p.startsWith('00')) p = '+' + p.slice(2);
+  else if (p.startsWith('07')) p = '+44' + p.slice(1);
+  else if (p.startsWith('44')) p = '+' + p;
+  if (p.startsWith('+440')) p = '+44' + p.slice(4);
+  return /^\+[1-9]\d{7,14}$/.test(p) ? p : null;
+}
+
 // HMAC-SHA256 hex of `payload` (string or Buffer) using the Veriff shared secret.
 function veriffSignature(payload) {
   return crypto.createHmac('sha256', VERIFF_SHARED_SECRET).update(payload).digest('hex');
@@ -379,9 +391,9 @@ module.exports = async function (fastify, opts) {
     const userId = requireUserId(request, reply);
     if (!userId) return;
 
-    const { phoneNumber } = request.body || {};
+    const phoneNumber = normalisePhone((request.body || {}).phoneNumber || (request.body || {}).phone);
     if (!phoneNumber) {
-      return reply.code(400).send({ error: 'phoneNumber is required (E.164, e.g. +447700900000)' });
+      return reply.code(400).send({ error: 'Please enter a valid mobile number, for example 07700 900000 or +44 7700 900000.' });
     }
 
     try {
@@ -418,9 +430,11 @@ module.exports = async function (fastify, opts) {
     const userId = requireUserId(request, reply);
     if (!userId) return;
 
-    const { phoneNumber, code } = request.body || {};
+    const smsBody = request.body || {};
+    const phoneNumber = normalisePhone(smsBody.phoneNumber || smsBody.phone);
+    const code = String(smsBody.code || '').replace(/\D/g, '');
     if (!phoneNumber || !code) {
-      return reply.code(400).send({ error: 'phoneNumber and code are required' });
+      return reply.code(400).send({ error: 'Please enter your mobile number and the code we sent you.' });
     }
 
     try {
@@ -442,7 +456,7 @@ module.exports = async function (fastify, opts) {
       if (!approved) {
         // 200 with a status the client can read (it checks result.status === 'verified'
         // and otherwise shows result.error), rather than throwing on a wrong code.
-        return reply.send({ status: 'failed', error: 'Invalid or expired code' });
+        return reply.code(400).send({ status: 'failed', error: 'That code is not right or has expired. Check it, or tap Resend code.' });
       }
 
       await prisma.user.update({
