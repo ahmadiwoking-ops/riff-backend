@@ -19,8 +19,10 @@ const FINAL_STATUSES = ['approved', 'declined', 'expired', 'abandoned'];
 const lastPull = new Map(); // userId -> time of last decision pull (light throttle)
 
 // Ask Veriff for a session's decision. null = no decision yet.
-async function pullDecision(sessionId) {
-  const res = await fetch(`${VERIFF_BASE_URL}/sessions/${sessionId}/decision`, {
+// Tries the classic decision endpoint first, then the Full Auto one (newer
+// self-serve integrations only answer on /decision/fullauto).
+async function veriffGet(path, sessionId) {
+  const res = await fetch(VERIFF_BASE_URL + path, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -28,11 +30,25 @@ async function pullDecision(sessionId) {
       'X-HMAC-SIGNATURE': veriffSignature(sessionId),
     },
   });
-  if (res.status === 404) return null;
   const text = await res.text();
-  if (!res.ok) { const e = new Error('Veriff decision HTTP ' + res.status); e.status = res.status; throw e; }
   let data = null; try { data = JSON.parse(text); } catch (e) {}
-  return data && data.verification && data.verification.status ? data.verification : null;
+  return { http: res.status, data: data };
+}
+async function pullDecision(sessionId) {
+  const last = pullDecision.last = { classic: null, fullauto: null, classicCode: null, fullautoCode: null };
+  const c = await veriffGet('/sessions/' + sessionId + '/decision', sessionId);
+  last.classic = c.http; last.classicCode = c.data && c.data.code ? c.data.code : null;
+  const cv = c.data && c.data.verification;
+  if (c.http === 200 && cv && cv.status) return { status: cv.status, vendorData: cv.vendorData };
+  const f = await veriffGet('/sessions/' + sessionId + '/decision/fullauto?version=1.0.0', sessionId);
+  last.fullauto = f.http; last.fullautoCode = f.data && f.data.code ? f.data.code : null;
+  const fd = f.data || {};
+  const fv = fd.data && fd.data.verification;
+  if (f.http === 200 && fv && fv.decision) return { status: fv.decision, vendorData: fd.vendorData || fv.vendorData };
+  if (c.http >= 400 && c.http !== 404 && f.http >= 400 && f.http !== 404) {
+    const e = new Error('Veriff decision HTTP ' + c.http + '/' + f.http); e.status = c.http + '/' + f.http; e.codes = last; throw e;
+  }
+  return null;
 }
 
 // Record a decision. Only "approved" changes idVerified, so a later declined
@@ -112,7 +128,8 @@ module.exports = async function (fastify, opts) {
       try {
         var v = await pullDecision(user.veriffSessionId);
         if (v && (!v.vendorData || String(v.vendorData) === String(userId))) { idStatus = v.status; idOk = await applyDecision(userId, v); }
-      } catch (e) { request.log.warn({ status: e.status }, 'Veriff decision pull failed'); }
+        else if (!v) request.log.info(pullDecision.last, 'Veriff decision not available yet');
+      } catch (e) { request.log.warn({ status: e.status, codes: e.codes }, 'Veriff decision pull failed'); }
     }
     return { selfie: user.selfieVerified || false, id: idOk, idStatus: idStatus, phone: user.phoneVerified || false, trustScore: idOk ? 'green' : (user.trustScore || "unverified"), plan: effPlan, verificationPaid: user.verificationPaid || false };
   });
@@ -207,11 +224,16 @@ module.exports = async function (fastify, opts) {
   //      https://<your-app>.up.railway.app/api/verification/webhook
   // ───────────────────────────────────────────────────────────────────────────
   fastify.post('/webhook', async (request, reply) => {
-    const signature = request.headers['x-hmac-signature'];
+    const signature = String(request.headers['x-hmac-signature'] || request.headers['vrf-hmac-signature'] || '').toLowerCase();
     const raw = request.rawBody || Buffer.from(JSON.stringify(request.body || {}));
 
     if (!signature || !safeEqual(signature, veriffSignature(raw))) {
-      request.log.warn('Veriff webhook: invalid or missing signature');
+      request.log.warn({
+        hasRaw: !!request.rawBody, rawLen: raw.length, contentType: request.headers['content-type'],
+        sigHeaders: Object.keys(request.headers).filter(function (h) { return /hmac|signature|auth-client|integration/i.test(h); }),
+        sigLen: signature.length, secretLen: (VERIFF_SHARED_SECRET || '').length,
+        authClientMatches: (request.headers['x-auth-client'] || request.headers['vrf-auth-client']) === VERIFF_API_KEY,
+      }, 'Veriff webhook: invalid or missing signature');
       return reply.code(401).send({ error: 'Invalid signature' });
     }
 
@@ -294,25 +316,9 @@ module.exports = async function (fastify, opts) {
     if (!sessionId) return reply.code(400).send({ error: 'No ID check has been started yet.' });
 
     try {
-      const res = await fetch(`${VERIFF_BASE_URL}/sessions/${sessionId}/decision`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-AUTH-CLIENT': VERIFF_API_KEY,
-          // GET /decision is signed over the sessionId. If you ever get 401s
-          // here, try signing the full request path instead:
-          //   veriffSignature(`/v1/sessions/${sessionId}/decision`)
-          'X-HMAC-SIGNATURE': veriffSignature(sessionId),
-        },
-      });
-
-      // While there is no conclusive decision yet, Veriff returns 404 (or a body
-      // with a null verification). Treat both as "pending".
-      const rawBody = await res.text();
-      if (res.status === 404) return reply.send({ status: 'pending' });
-      let data = null; try { data = JSON.parse(rawBody); } catch (e) {}
-      const verification = data && data.verification;
-      if (!verification || !verification.status) {
+      const verification = await pullDecision(sessionId);
+      if (!verification) {
+        request.log.info(pullDecision.last, 'Veriff decision not available yet');
         return reply.send({ status: 'pending' });
       }
 
