@@ -10,9 +10,40 @@ const crypto = require('crypto');
 const prisma = require('../db');
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VERIFF_BASE_URL = process.env.VERIFF_API_URL || 'https://stationapi.veriff.com/v1';
+const VERIFF_BASE_URL = process.env.VERIFF_API_URL || 'https://api-saas.veriff.com/v1';
 const VERIFF_API_KEY = process.env.VERIFF_API_KEY;
 const VERIFF_SHARED_SECRET = process.env.VERIFF_SHARED_SECRET;
+
+// Decisions that will not change for a session. Anything else is worth asking Veriff again.
+const FINAL_STATUSES = ['approved', 'declined', 'expired', 'abandoned'];
+const lastPull = new Map(); // userId -> time of last decision pull (light throttle)
+
+// Ask Veriff for a session's decision. null = no decision yet.
+async function pullDecision(sessionId) {
+  const res = await fetch(`${VERIFF_BASE_URL}/sessions/${sessionId}/decision`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-AUTH-CLIENT': VERIFF_API_KEY,
+      'X-HMAC-SIGNATURE': veriffSignature(sessionId),
+    },
+  });
+  if (res.status === 404) return null;
+  const text = await res.text();
+  if (!res.ok) { const e = new Error('Veriff decision HTTP ' + res.status); e.status = res.status; throw e; }
+  let data = null; try { data = JSON.parse(text); } catch (e) {}
+  return data && data.verification && data.verification.status ? data.verification : null;
+}
+
+// Record a decision. Only "approved" changes idVerified, so a later declined
+// attempt can never take away an ID that was already approved.
+async function applyDecision(userId, verification) {
+  const approved = verification.status === 'approved';
+  const data = { veriffStatus: String(verification.status) };
+  if (approved) { data.idVerified = true; data.trustScore = 'green'; }
+  await prisma.user.update({ where: { id: userId }, data: data });
+  return approved;
+}
 
 // Twilio Verify (handles code generation + checking server-side, so no DB table
 // is needed). Swap this block out if you use a different SMS provider.
@@ -71,10 +102,19 @@ module.exports = async function (fastify, opts) {
   // ── Status endpoint ──
   fastify.get("/status", async (request, reply) => {
     var userId = requireUserId(request, reply); if (!userId) return;
-    var user = await prisma.user.findUnique({ where: { id: userId }, select: { selfieVerified: true, idVerified: true, phoneVerified: true, trustScore: true, plan: true, planExpiresAt: true, verificationPaid: true } });
+    var user = await prisma.user.findUnique({ where: { id: userId }, select: { selfieVerified: true, idVerified: true, phoneVerified: true, trustScore: true, plan: true, planExpiresAt: true, verificationPaid: true, veriffSessionId: true, veriffStatus: true } });
     if (!user) return reply.code(404).send({ error: "User not found" });
     var effPlan = user.plan || "free"; if (user.planExpiresAt && user.planExpiresAt < new Date()) effPlan = "free";
-    return { selfie: user.selfieVerified || false, id: user.idVerified || false, phone: user.phoneVerified || false, trustScore: user.trustScore || "unverified", plan: effPlan, verificationPaid: user.verificationPaid || false };
+    var idOk = user.idVerified || false;
+    var idStatus = user.veriffStatus || null;
+    if (!idOk && user.veriffSessionId && FINAL_STATUSES.indexOf(idStatus) === -1 && Date.now() - (lastPull.get(userId) || 0) > 8000) {
+      lastPull.set(userId, Date.now());
+      try {
+        var v = await pullDecision(user.veriffSessionId);
+        if (v && (!v.vendorData || String(v.vendorData) === String(userId))) { idStatus = v.status; idOk = await applyDecision(userId, v); }
+      } catch (e) { request.log.warn({ status: e.status }, 'Veriff decision pull failed'); }
+    }
+    return { selfie: user.selfieVerified || false, id: idOk, idStatus: idStatus, phone: user.phoneVerified || false, trustScore: idOk ? 'green' : (user.trustScore || "unverified"), plan: effPlan, verificationPaid: user.verificationPaid || false };
   });
 
   //    Mobile calls this, then opens the returned `url` with Linking.openURL().
@@ -148,6 +188,8 @@ module.exports = async function (fastify, opts) {
         return reply.code(502).send({ error: 'Could not create verification session' });
       }
 
+      await prisma.user.update({ where: { id: userId }, data: { veriffSessionId: String(data.verification.id), veriffStatus: 'created' } })
+        .catch(function (e) { request.log.error(e, 'Could not store the Veriff session id'); });
       return reply.send({
         url: data.verification.url, // open this on the device
         sessionId: data.verification.id, // keep this; send it to /complete-id-check
@@ -191,10 +233,9 @@ module.exports = async function (fastify, opts) {
       // and never touch selfieVerified from the Veriff decision.
       await prisma.user.update({
         where: { id: vendorData }, // NOTE: if User.id is an Int, use Number(vendorData)
-        data: {
-          idVerified: approved,
-          trustScore: approved ? 'green' : undefined,
-        },
+        data: approved
+          ? { idVerified: true, trustScore: 'green', veriffStatus: 'approved' }
+          : { veriffStatus: decision ? String(decision) : undefined },
       });
     } catch (err) {
       // Never 500 here — Veriff would just retry. Log and acknowledge.
@@ -245,8 +286,12 @@ module.exports = async function (fastify, opts) {
     const userId = requireUserId(request, reply);
     if (!userId) return;
 
-    const { sessionId } = request.body || {};
-    if (!sessionId) return reply.code(400).send({ error: 'sessionId is required' });
+    let sessionId = (request.body || {}).sessionId;
+    if (!sessionId) {
+      const su = await prisma.user.findUnique({ where: { id: userId }, select: { veriffSessionId: true } });
+      sessionId = su && su.veriffSessionId;
+    }
+    if (!sessionId) return reply.code(400).send({ error: 'No ID check has been started yet.' });
 
     try {
       const res = await fetch(`${VERIFF_BASE_URL}/sessions/${sessionId}/decision`, {
@@ -272,12 +317,10 @@ module.exports = async function (fastify, opts) {
       }
 
       const decision = verification.status; // approved | declined | resubmission_requested | ...
-      const approved = decision === 'approved';
-
-      await prisma.user.update({
-        where: { id: userId },
-        data: { idVerified: approved , trustScore: approved ? 'green' : undefined },
-      });
+      if (verification.vendorData && String(verification.vendorData) !== String(userId)) {
+        return reply.code(403).send({ error: 'This verification belongs to a different account.' });
+      }
+      const approved = await applyDecision(userId, verification);
 
       return reply.send({ status: decision, idVerified: approved });
     } catch (err) {
