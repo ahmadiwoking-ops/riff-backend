@@ -34,17 +34,54 @@ async function veriffGet(path, sessionId) {
   let data = null; try { data = JSON.parse(text); } catch (e) {}
   return { http: res.status, data: data };
 }
+// Find a Veriff decision anywhere in a response, whatever its exact layout.
+const DECISION_VALUES = ['approved', 'declined', 'resubmission_requested', 'review', 'expired', 'abandoned'];
+function findDecision(o, depth) {
+  depth = depth || 0;
+  if (!o || typeof o !== 'object' || depth > 6) return null;
+  for (const k of ['decision', 'status']) {
+    if (typeof o[k] === 'string' && DECISION_VALUES.indexOf(o[k].toLowerCase()) !== -1) return o[k].toLowerCase();
+  }
+  const keys = Object.keys(o).sort(function (a, b) { return (b === 'verification') - (a === 'verification'); });
+  for (const k of keys) { const r = findDecision(o[k], depth + 1); if (r) return r; }
+  return null;
+}
+function findVendorData(o, depth) {
+  depth = depth || 0;
+  if (!o || typeof o !== 'object' || depth > 6) return null;
+  if (typeof o.vendorData === 'string') return o.vendorData;
+  for (const k of Object.keys(o)) { const r = findVendorData(o[k], depth + 1); if (r) return r; }
+  return null;
+}
+// The layout of a response with personal data removed: keys and types only,
+// plus the values of a few harmless status fields. Safe to log.
+const SHOW_VALUES = ['status', 'decision', 'code', 'reason', 'reasonCode', 'version'];
+function shapeOf(o, depth, key) {
+  depth = depth || 0;
+  if (o === null) return null;
+  if (Array.isArray(o)) return o.length ? ['array(' + o.length + ')', depth < 4 ? shapeOf(o[0], depth + 1) : '...'] : [];
+  if (typeof o === 'object') {
+    if (depth >= 4) return '{...}';
+    const out = {};
+    for (const k of Object.keys(o).slice(0, 25)) out[k] = shapeOf(o[k], depth + 1, k);
+    return out;
+  }
+  if (SHOW_VALUES.indexOf(key) !== -1 && (typeof o === 'number' || (typeof o === 'string' && o.length < 40))) return o;
+  return typeof o;
+}
+
 async function pullDecision(sessionId) {
-  const last = pullDecision.last = { classic: null, fullauto: null, classicCode: null, fullautoCode: null };
+  const last = pullDecision.last = { classic: null, fullauto: null };
   const c = await veriffGet('/sessions/' + sessionId + '/decision', sessionId);
-  last.classic = c.http; last.classicCode = c.data && c.data.code ? c.data.code : null;
-  const cv = c.data && c.data.verification;
-  if (c.http === 200 && cv && cv.status) return { status: cv.status, vendorData: cv.vendorData };
+  last.classic = c.http;
+  const cd = c.http === 200 ? findDecision(c.data) : null;
+  if (cd) return { status: cd, vendorData: findVendorData(c.data) };
   const f = await veriffGet('/sessions/' + sessionId + '/decision/fullauto?version=1.0.0', sessionId);
-  last.fullauto = f.http; last.fullautoCode = f.data && f.data.code ? f.data.code : null;
-  const fd = f.data || {};
-  const fv = fd.data && fd.data.verification;
-  if (f.http === 200 && fv && fv.decision) return { status: fv.decision, vendorData: fd.vendorData || fv.vendorData };
+  last.fullauto = f.http;
+  const fdec = f.http === 200 ? findDecision(f.data) : null;
+  if (fdec) return { status: fdec, vendorData: findVendorData(f.data) };
+  last.classicShape = JSON.stringify(shapeOf(c.data)).slice(0, 1500);
+  last.fullautoShape = JSON.stringify(shapeOf(f.data)).slice(0, 1500);
   if (c.http >= 400 && c.http !== 404 && f.http >= 400 && f.http !== 404) {
     const e = new Error('Veriff decision HTTP ' + c.http + '/' + f.http); e.status = c.http + '/' + f.http; e.codes = last; throw e;
   }
