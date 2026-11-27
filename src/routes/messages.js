@@ -115,10 +115,15 @@ async function messageRoutes(app) {
     if (request.body.create === false) return { connection: null };
 
     // Check plan limits before creating new connection
-    var user = await prisma.user.findUnique({ where: { id: myId }, select: { plan: true, planExpiresAt: true } });
+    var user = await prisma.user.findUnique({ where: { id: myId }, select: { plan: true, planExpiresAt: true, createdAt: true } });
     var plan = user.plan || 'free';
     if (user.planExpiresAt && user.planExpiresAt < new Date()) plan = 'free';
     var limits = getLimits(plan);
+
+    // Same 7-day free trial as sending messages: once it has ended, no new connections either.
+    if (plan === 'free' && Date.now() - new Date(user.createdAt).getTime() > 7 * 24 * 60 * 60 * 1000) {
+      return { error: 'Your 7-day free trial has ended. Choose a plan to start new Deep Connections.', code: 'TRIAL_ENDED', locked: true, upgrade: true };
+    }
 
     if (limits.deepConnections === 0) {
       return { error: 'Your plan does not include deep connections. Upgrade to Explorer or Inner Circle.', code: 'PLAN_LIMIT' };
