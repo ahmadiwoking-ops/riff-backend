@@ -45,7 +45,7 @@ async function hasSomethingWaiting(user) {
     select: { userAId: true, userBId: true, isActive: true },
   });
   const active = conns.filter(function (c) { return c.isActive; }).length;
-  const used = plan === 'free' ? conns.length : active;
+  const used = active;   // every plan counts active connections only
   if (limit !== -1 && used >= limit) return false;   // no room - the nudge would be a lie
 
   // Someone unconnected must actually be available, or we are sending people

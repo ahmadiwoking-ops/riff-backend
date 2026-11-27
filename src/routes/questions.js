@@ -126,8 +126,8 @@ async function questionRoutes(app) {
     var connectedIds = myConns.map(function (c) { return c.userAId === request.user.id ? c.userBId : c.userAId; });
     var activeCount = myConns.filter(function (c) { return c.isActive; }).length;
 
-    // Free is a LIFETIME limit - one connection ever, ended included.
-    var usedSlots = plan === 'free' ? myConns.length : activeCount;
+    // Every plan, free included, counts ACTIVE connections: fading one frees the slot.
+    var usedSlots = activeCount;
     var remaining = planLimit === -1 ? 999 : Math.max(0, planLimit - usedSlots);
 
     var pool = null, wasCached = false;

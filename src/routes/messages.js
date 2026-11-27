@@ -125,28 +125,16 @@ async function messageRoutes(app) {
     }
 
     if (limits.deepConnections !== -1) {
-      if (plan === 'free') {
-        // FREE = one deep connection EVER (lifetime). Count active + ended (any non-practice connection).
-        var everCount = await prisma.connection.count({
-          where: { OR: [{ userAId: myId }, { userBId: myId }], isPractice: false },
-        });
-        if (everCount >= 1) {
-          return {
-            error: 'Free accounts include one deep connection. Subscribe to a paid plan to connect with more people.',
-            code: 'FREE_LIFETIME_LIMIT',
-            current: everCount,
-            limit: 1,
-            plan: plan,
-          };
-        }
-      } else {
-        // Paid tiers: limit is per active connection (at a time)
+      {
+        // Every plan, free included: the limit is per ACTIVE connection (at a time).
         var activeCount = await prisma.connection.count({
           where: { OR: [{ userAId: myId }, { userBId: myId }], isActive: true },
         });
         if (activeCount >= limits.deepConnections) {
           return {
-            error: plan === 'inner_circle' ? 'You have reached your limit of 5 active connections. End one to start a new connection.' : 'You have reached your deep connection limit (' + limits.deepConnections + ' on ' + plan + ' plan). Upgrade to get more connections.',
+            error: plan === 'inner_circle' ? 'You have reached your limit of 5 active connections. End one to start a new connection.'
+              : plan === 'free' ? 'The free plan includes one active Deep Connection at a time. Fade your current connection, or upgrade to connect with more people at once.'
+              : 'You have reached your deep connection limit (' + limits.deepConnections + ' on ' + plan + ' plan). Upgrade to get more connections.',
             code: 'PLAN_LIMIT',
             current: activeCount,
             limit: limits.deepConnections,
